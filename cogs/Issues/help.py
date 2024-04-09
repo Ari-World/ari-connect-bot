@@ -60,4 +60,5 @@ class Help(commands.Cog):
 
 
 async def setup(bot:commands.Bot):
+    print("Help Cog Loading")
     await bot.add_cog(Help(bot))
