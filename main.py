@@ -50,7 +50,7 @@ class Ari(commands.Bot):
             error.retry_after)
         await ctx.send(msg)
     else:
-       await ctx.send("Command not found")
+       await ctx.send(error)
 
   async def setup_hook(self):
     

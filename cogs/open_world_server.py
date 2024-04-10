@@ -11,6 +11,9 @@ from typing import List
 from typing import Optional
 from discord import AllowedMentions
 from discord.ext import commands
+from discord import Embed
+
+from plugins.ui import ConnectDropDown
 
 class OpenWorldServer(commands.Cog):
     def __init__(self, bot:commands.Bot, db):
@@ -38,7 +41,6 @@ class OpenWorldServer(commands.Cog):
         return len(lobby_users) >= lobby_limit
 
     #Create a Lobby
-
     async def create_guild_document(self, guild_id: int, channel_id: int, server_name: str, lobby_name: str):
         print("Creating Data")
         # Gets the database data in thte guilds_collection
@@ -112,9 +114,14 @@ class OpenWorldServer(commands.Cog):
 
     
     @commands.hybrid_command(name='connect', description='Link to Open World')
-    # @commands.has_permissions(kick_members=True)
+    @commands.has_permissions(kick_members=True)
     async def openworldlink(self, ctx, channel: discord.TextChannel):
-        print("openworld link module entered")
+        print("Openworld link module entered")
+        embed = Embed(
+            description="Preparing ...",
+            color=0x7289DA 
+        )
+        sent_message = await ctx.send(embed=embed)
         print("Initialize data needed")
         # Initialize needed data
         guild_id = ctx.guild.id
@@ -123,18 +130,54 @@ class OpenWorldServer(commands.Cog):
         print("Checking if channel exists")
         # Checks if the channel exists
         existing_guild = await self.find_guild(guild_id, channel_id)
+        print(existing_guild)
         if existing_guild:
-            await ctx.send(":no_entry: **Your channel is already registered for Open World Chat**\n\n**Type `a!unlink` to unlink your Open World**\n*This will only unlink from the Open World channel*")
+            embed = Embed(
+                title=":no_entry: Your channel is already registered for Open World Chat",
+                description="Type `a!unlink` to unlink your Open World\n*This will only unlink from the Open World channel*",
+                color=0xFF0000  # Red color
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        print("Preparing")
+
+        embed = Embed(
+            title="Select a lobby",
+            description="Choose a lobby to join",
+            color=0x7289DA 
+        )
+        await sent_message.edit(embed=embed)
+
+        dropdown =ConnectDropDown()
+        message = await ctx.send(view=dropdown)
+        
+        def check(interaction):
+            return interaction.message == message and interaction.user == ctx.author
+
+        try:
+            interaction = await ctx.bot.wait_for("dropdown", check=check, timeout=60.0)
+            selected_value = interaction.values[0]
+            print("Selected value:", selected_value)
+            await ctx.send(f"The selected value is: {selected_value}")
+        except asyncio.TimeoutError:
+            await ctx.send("You took too long to make a selection.")
             return
 
-        # Login Process
-        sent_message = await ctx.send('Logging in...')
+        embed = Embed(
+            description="Logging in ...",
+            color=0x7289DA 
+        )
+        await sent_message.edit(embed=embed)
         await asyncio.sleep(1)
-        await sent_message.edit(content='Linking into Open World Server...')
+        embed.description = "Linking into Open World Server..."
+        await sent_message.edit(embed=embed)
         await asyncio.sleep(1)
-        await sent_message.edit(content=f'Confirming Connection with World - `{ctx.guild.id}`...')
+        embed.description = f"Confirming Connection with World - `{ctx.guild.id}`..."
+        await sent_message.edit(embed=embed)
         await asyncio.sleep(1)
-        await sent_message.edit(content=f'Fetching Data from World - `{ctx.guild.id}`...')
+        embed.description = f"Fetching Data from World - `{ctx.guild.id}`..."
+        await sent_message.edit(embed=embed)
         await asyncio.sleep(1)
 
         # # what is this code block??
@@ -153,13 +196,20 @@ class OpenWorldServer(commands.Cog):
         #         await sent_message.edit(content=':no_entry: **All lobbies are currently full. Please contact the developer for assistance.**')
         #         return
 
+
         # now connect
-        await sent_message.edit(content=f':white_check_mark: **LINK START!! You are now connected to {lobby_name}**')
+        embed.description = f':white_check_mark: **LINK START!! You are now connected to {lobby_name}**'
+        await sent_message.edit(embed=embed)
         await asyncio.sleep(1)
-        await self.create_guild_document(guild_id, channel_id, ctx.guild.name, lobby_name)
+        # await self.create_guild_document(guild_id, channel_id, ctx.guild.name, lobby_name)
         
         # sends a successful message
-        message = await ctx.send("Thank you for linking with Open World Server!\nContact your Server Owners and ask them to contact the developer if any difficulties or suggestions!\nHave Fun chatting and maintain a friendly environment!\n\nIF YOU SEE ANY MESSAGE THAT BREAKS THE RULES, kindly report it by long-pressing the message > apps > report message by Ari Toram.\nThank you!")
+        embed = Embed(
+            title="Thank you for linking with Open World Server!",
+            description="Contact your Server Owners and ask them to contact the developer if any difficulties or suggestions!\nHave Fun chatting and maintain a friendly environment!\n\nIF YOU SEE ANY MESSAGE THAT BREAKS THE RULES, kindly report it by long-pressing the message > apps > report message by Ari Toram.\nThank you!",
+            color=0x00FF00 
+        )
+        message = await ctx.send(embed=embed)
         await message.add_reaction('✅')
     
     @commands.hybrid_command(name='unlink', description='Unlink from Open World')
@@ -197,63 +247,50 @@ class OpenWorldServer(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        print(message.channel.id)
-        # Implemetn a filter where this function only run when its under the registered channel
-
-
-        # Get specifics collections
-       
-        muted_collection = self.bot.db.muted_collection
-        guilds_collection = self.bot.db.guilds_collection
-        
-
-        # if the message author is a bot
         if message.author.bot:
+            # Return if the sender is a bot
             return
 
-        print("User is not a bot")
-        #Saves the message 
+        guild_id = message.guild.id
+        channel_id = message.channel.id
+
+        muted_collection = self.bot.db.muted_collection
+        guilds_collection = self.bot.db.guilds_collection
+
+        guild_document = await self.find_guild(guild_id, channel_id)
+        if not guild_document:
+
+            return
+
+        # there might be a better optimization here
         user_id = message.author.id
         muted_document =  await muted_collection.find_one({"server_id": user_id})
 
         if muted_document:
+            # Return if the sender is muted
             return
     
         # Calls for process_message method
-        await self.process_message(message,guilds_collection)
+        await self.process_message(message,guild_document, guild_id, channel_id)
     
     
-    async def process_message(self, message, guilds_collection):
-        print("Processing message")
-        # Initialize the variable needed
-        guild_id = message.guild.id
-        channel_id = message.channel.id
-
-        print("Fetching guilds")
-        # find if the guild exists
-        guild_document = await self.find_guild(guild_id, channel_id)
+    async def process_message(self, message, guild_document, guild_id, channel_id):
+       
+        print("Processing Message")
+        print("Sender with ID: " + str(guild_id) + " and channel ID: " + str(channel_id))
+        channels = guild_document.get("channels", [])
         
-        
-        # if exsits
-        if guild_document:
-            print("This channel is registered")
-            print("Guild with ID: " + str(guild_id) + " and channel ID: " + str(channel_id))
-            # gets all channel
-            channels = guild_document.get("channels", [])
-            
-            for channel in channels:
-                # if channel id matches
-                if channel["channel_id"] == channel_id:
-                    
-                    lobby_name = channel.get("lobby_name")
-                    # if lobby name exists
-                    if lobby_name:
-                        if lobby_name == "God Lobby":
-                            await self.send_to_all_servers(message, lobby_name)
-                        else:
-                            await self.send_to_matching_lobbies(message, lobby_name, channel_id)
-        else:
-            print("Channel isn't registered in the world chat")
+        for channel in channels:
+            # if channel id matches
+            if channel["channel_id"] == channel_id:
+                
+                lobby_name = channel.get("lobby_name")
+                # if lobby name exists
+                if lobby_name:
+                    if lobby_name == "God Lobby":
+                        await self.send_to_all_servers(message, lobby_name)
+                    else:
+                        await self.send_to_matching_lobbies(message, lobby_name, channel_id)
 
     # This is set up for announcement messages
     async def send_to_all_servers(self, message, lobby_name):
@@ -338,7 +375,7 @@ class OpenWorldServer(commands.Cog):
                     print(target_channel)
                     # if there's a channel registered in the guild
                     if target_channel:
-                        print("Loading ")
+                        print("Preparing the message ")
                         strength = lobby_strengths.get(lobby_name, 0)
                         if "private" in lobby_name:
                             emoji = "🔒"  # Lock emoji for private lobbies
@@ -347,7 +384,9 @@ class OpenWorldServer(commands.Cog):
 
                         # content = f"{emoji} `{lobby_name}`\n:feather: **{message.guild.name} ☆ {message.author}  :\n\n** {message.content}"
                         # content += self.censor_bad_words(f"{message.content}\n\u200b", lobby_name)
-                        content = f"**{message.guild.name}** `{message.author}`: {message.content}"
+                        
+                        content = f"{emoji} **{message.guild.name}** ` {message.author} `: {message.content}"
+
                         mentions = self.get_allowed_mentions(message, include_author=False)
                         task = asyncio.create_task(target_channel.send(content, allowed_mentions=mentions))
 
@@ -356,8 +395,10 @@ class OpenWorldServer(commands.Cog):
                             tasks.append(attachment_task)
 
                         tasks.append(task)
+                        print("Message Added to queue")
 
         await asyncio.gather(*tasks)
+        print("All Message sent")
     
     async def get_lobby_count(self, lobby_name: str) -> int:
         count = 0
