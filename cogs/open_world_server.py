@@ -150,20 +150,12 @@ class OpenWorldServer(commands.Cog):
         await sent_message.edit(embed=embed)
 
         dropdown =ConnectDropDown()
-        message = await ctx.send(view=dropdown)
         
-        def check(interaction):
-            return interaction.message == message and interaction.user == ctx.author
-
-        try:
-            interaction = await ctx.bot.wait_for("dropdown", check=check, timeout=60.0)
-            selected_value = interaction.values[0]
-            print("Selected value:", selected_value)
-            await ctx.send(f"The selected value is: {selected_value}")
-        except asyncio.TimeoutError:
-            await ctx.send("You took too long to make a selection.")
-            return
-
+        message = await ctx.send(view=dropdown)
+        await dropdown.wait()
+        
+        await ctx.send(f"Selected: Lobby {dropdown.lobby}")
+        await message.delete()
         embed = Embed(
             description="Logging in ...",
             color=0x7289DA 
