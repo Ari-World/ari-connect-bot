@@ -19,7 +19,6 @@ class Ari(commands.Bot):
     
     
   def startBot(self):
-    
     self.run(self.token)
 
   def databaseCollections(self):
