@@ -49,6 +49,8 @@ class Ari(commands.Bot):
         msg = '**Command on cooldown** Retry after **{:.2f}s**'.format(
             error.retry_after)
         await ctx.send(msg)
+    elif not isinstance(error, Exception):
+        await ctx.send(error)
     else:
        await ctx.send(error)
 

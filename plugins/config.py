@@ -7,7 +7,7 @@ load_dotenv()
 def load_config():
     discord_api_token = os.getenv('DISCORD_API_TOKEN')
     discord_command_prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
-
+    mongo_db_url = os.getenv('MONGO_DB_URL')
     # music_max_duration_mins = int(os.getenv('MUSIC_MAX_DURATION_MINS', '20'))
     # music_queue_per_page = int(os.getenv('MUSIC_QUEUE_PER_PAGE', '10'))
 
@@ -17,5 +17,5 @@ def load_config():
     return {
         'DISCORD_API_TOKEN': discord_api_token,
         'DISCORD_COMMAND_PREFIX': discord_command_prefix,
-
+        'MONGO_DB_URL': mongo_db_url
     }

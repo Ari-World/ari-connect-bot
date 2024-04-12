@@ -1,7 +1,8 @@
 from motor.motor_asyncio import AsyncIOMotorClient
+from plugins import config
 
-
-cluster = AsyncIOMotorClient(['mongodb+srv://ajrizaldo1:NeWW90S4YyOF9Kp2@cluster0.uw5p0nu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0'])
+config = config.load_config()
+cluster = AsyncIOMotorClient([config['MONGO_DB_URL']])
 
 class db:
   db = cluster['AriDB']
