@@ -5,7 +5,7 @@ import discord
 from discord import Intents
 from plugins import config
 from discord.ext import commands
-
+from discord import app_commands
 from plugins.db import db
 
 
@@ -16,15 +16,16 @@ class Ari(commands.Bot):
     self.token = self.config['DISCORD_API_TOKEN']
     self.db = db
     super().__init__(command_prefix= self.config['DISCORD_COMMAND_PREFIX'], intents=Intents.all())
-    
-    
+    self.synced = False
+
   def startBot(self):
     self.run(self.token)
-
-  def databaseCollections(self):
-    print(self.db)
     
   async def on_ready(self):
+    await self.wait_until_ready()
+    if not self.synced:
+       await self.tree.sync()
+       self.synced = True
     guild_count = len(self.guilds)
     member_count = sum(len(guild.members) for guild in self.guilds)
 
@@ -48,10 +49,10 @@ class Ari(commands.Bot):
         msg = '**Command on cooldown** Retry after **{:.2f}s**'.format(
             error.retry_after)
         await ctx.send(msg)
-    elif not isinstance(error, Exception):
-        await ctx.send(error)
-    else:
-       await ctx.send(error)
+    # elif not isinstance(error, Exception):
+    #     await ctx.send(error)
+    # else:
+    #    await ctx.send(error)
 
   async def setup_hook(self):
     
@@ -60,12 +61,12 @@ class Ari(commands.Bot):
             if filename.endswith('.py') and not filename.startswith('__'):
                 cog_name = f'cogs.{filename[:-3]}'
                 await self.load_extension(cog_name)
-                print(f"{cog_name} Cog has been loaded")
-
+    
+   
     await load_cogs("./cogs")
 
 
+
 if __name__ == "__main__":
-  print(config.load_config())
   bot = Ari()
   bot.startBot()
