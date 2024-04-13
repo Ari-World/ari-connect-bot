@@ -5,7 +5,7 @@ class Fun(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
 
-    @commands.command(name="FunTest")
+    @commands.hybrid_command(name="funtest", description="fun test command")
     async def FunTest(self, ctx):
         embed = discord.Embed(
             color = (discord.Colour.random()),
@@ -16,5 +16,4 @@ class Fun(commands.Cog):
 
 
 async def setup(bot:commands.Bot):
-    print("Fun Cog Loading")
     await bot.add_cog(Fun(bot))
