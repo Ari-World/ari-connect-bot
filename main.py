@@ -48,7 +48,7 @@ class Ari(commands.Bot):
     target_log = guild.get_channel(1230069779071762473)
     target_channel = guild.system_channel  # Use the system channel for the guild
     if target_channel is not None:  # Ensure there's a system channel
-        await target_channel.send(f"💖 **Thank you for inviting {self.user.name}!!**\n\n__**A brief intro**__\nHey Everyone! My main purpose is creating an Inter Guild / Server Connectivity to bring the world closer together!\nHope you'll find my application useful! Thankyouuu~\n\nType `a!about` to know more about me and my usage!\n\n**__Servers Connected__**\n{len(self.bot.guilds)}\n\n")
+        await target_channel.send(f"💖 **Thank you for inviting {self.user.name}!!**\n\n__**A brief intro**__\nHey Everyone! My main purpose is creating an Inter Guild / Server Connectivity to bring the world closer together!\nHope you'll find my application useful! Thankyouuu~\n\nType `a!about` to know more about me and my usage!\n\n**__Servers Connected__**\n{len(self.guilds)}\n\n")
     else:
         print("System channel not found. Unable to send welcome message.")
     await target_log.send(embed=discord.Embed(description=f'Bot has been added to a new server {guild.name}'))
