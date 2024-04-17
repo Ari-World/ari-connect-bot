@@ -44,7 +44,7 @@ class Ari(commands.Bot):
   
   async def on_guild_join(self,guild):
     print(f'Bot has been added to a new server {guild.name}')
-    guild = self.bot.get_guild(939025934483357766)
+    guild = self.get_guild(939025934483357766)
     target_log = guild.get_channel(1230069779071762473)
     target_channel = guild.system_channel  # Use the system channel for the guild
     if target_channel is not None:  # Ensure there's a system channel
