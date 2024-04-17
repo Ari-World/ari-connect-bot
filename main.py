@@ -7,8 +7,10 @@ from plugins import config
 from discord.ext import commands
 from discord import app_commands
 from plugins.db import db
-
-
+from plugins.lobby_repository import LobbyRepository
+from plugins.malurl_repository import MaliciousURLRepository
+from plugins.malword_repository import MaliciousWordsRepository
+from plugins.muted_repository import MutedRepository
 
 class Ari(commands.Bot):
   def __init__(self, *args, **kwargs):
@@ -17,6 +19,7 @@ class Ari(commands.Bot):
     self.db = db
     super().__init__(command_prefix= self.config['DISCORD_COMMAND_PREFIX'], intents=Intents.all())
     self.synced = False
+    self.repositoryInitialize(self.db)
 
   def startBot(self):
     self.run(self.token)
@@ -49,24 +52,30 @@ class Ari(commands.Bot):
         msg = '**Command on cooldown** Retry after **{:.2f}s**'.format(
             error.retry_after)
         await ctx.send(msg)
-    # elif not isinstance(error, Exception):
-    #     await ctx.send(error)
-    # else:
-    #    await ctx.send(error)
+    elif not isinstance(error, Exception):
+        await ctx.send(error)
+    else:
+       await ctx.send(error)
 
   async def setup_hook(self):
     
     async def load_cogs(directory):
+        await self.load_extension("cogs.open_world_server")
+
         for filename in os.listdir(directory):
-            if filename.endswith('.py') and not filename.startswith('__'):
+            if filename.endswith('.py') and not filename.startswith('__') and not filename.startswith('open_world_server'):
                 cog_name = f'cogs.{filename[:-3]}'
+                print(cog_name)
                 await self.load_extension(cog_name)
-    
+            
    
     await load_cogs("./cogs")
-
-
-
+  
+  def repositoryInitialize(self,db):
+    self.muted_repository = MutedRepository(db)
+    self.lobby_repository = LobbyRepository(db)
+    self.malicious_urls = MaliciousURLRepository(db)
+    self.malicious_words = MaliciousWordsRepository(db)
 if __name__ == "__main__":
   bot = Ari()
   bot.startBot()

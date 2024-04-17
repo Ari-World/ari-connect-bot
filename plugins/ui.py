@@ -1,31 +1,36 @@
 
+from typing import List
 import discord
+from discord.utils import MISSING
 
-
-class ConnectDropDown(discord.ui.View):
-    def __init__(self, author):
-        super().__init__()
+class LobbyDropDown(discord.ui.Select):
+    def __init__(self,server_lobbies,author, on_item_added):
+        self.server_lobbies = server_lobbies
         self.author = author
-        self.lobby = None
-
-    @discord.ui.select(
-        placeholder="Select a lobby",
-        options = [
-            discord.SelectOption(label="Toram Lobby 1", value="Toram Lobby 1"),
-            discord.SelectOption(label="Toram Lobby 2", value="Toram Lobby 2"),
-            discord.SelectOption(label="Cafe Lobby 1", value="Cafe Lobby 1"),
-            discord.SelectOption(label="Cafe Lobby 2", value="Cafe Lobby 2"),
-        ],
-        min_values=1,
-        max_values=1
-    )
-    async def getLobbies(self, interaction: discord.interactions ,select_item: discord.ui.select):
+        self.on_item_added = on_item_added
+        
+        options = [discord.SelectOption(label=lobby["lobbyname"], value=lobby["lobbyname"]) for lobby in self.server_lobbies]
+        super().__init__(
+            placeholder="Select a lobby",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+    async def callback(self, interaction):
         if interaction.user == self.author:
-            self.lobby = select_item.values[0]
             await interaction.response.defer()
-            self.stop()
+            await self.on_item_added(interaction.data['values'][0])
+            
+        
+class ConnectDropDown(discord.ui.View):
+    def __init__(self, author, server_lobbies):
+        super().__init__()
+        self.lobby = None
+        self.add_item(LobbyDropDown(server_lobbies,author, self.on_item_added))
 
-
+    async def on_item_added(self,value):
+        self.lobby = value
+        self.stop()
 class Choice(discord.ui.View):
     def __init__(self, author):
         super().__init__()

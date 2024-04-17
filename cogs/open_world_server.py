@@ -12,33 +12,41 @@ from typing import Optional
 from discord import AllowedMentions
 from discord.ext import commands
 from discord import Embed
-
 from plugins.ui import Choice, ConnectDropDown
 
 class OpenWorldServer(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
-        self.per_page = 5
-        self.server_lobbies = ["Toram Lobby 1", "Toram Lobby 2", "Cafe Lobby 1", "Cafe Lobby 2"]
-        self.private_lobbies = {
-        "private_exile_alliance_guilds": "DrAzyGD"
-        }
+        self.server_lobbies = None
 
-        self.lobby_limits = {
-                "Toram Lobby 1": 17,
-                "Toram Lobby 2": 15,
-                "Cafe Lobby 1": 15,
-                "Cafe Lobby 2": 15
-            }
-        
-    def get_lobby_limit(self, lobby_name: str) -> Optional[int]:
-        return self.lobby_limits.get(lobby_name)
+    # Caching data
+    async def cog_load(self):
+        self.server_lobbies = await self.bot.lobby_repository.getAllLobbies()
+        print(self.server_lobbies)
+        self.muted_users = await self.bot.muted_repository.findAll()
+        print(self.muted_users)
+        self.malicious_urls = await self.bot.malicious_urls.findAll()
+        print(self.malicious_urls)
+        self.malicious_words = await self.bot.malicious_words.findAll()
+        print(self.malicious_words)
+    @commands.command(name="reloaddata")
+    async def reload(self,ctx):
+        await self.cog_load()
+        await ctx.send(embed=Embed(
+            description=" Data Loaded ",
+        ))
 
-    # This is a boolean that returns if lobby is full
-    async def is_lobby_full(self, lobby_name: str, lobby_limit: int) -> bool:
-        lobby_users = await self.get_lobby_users(lobby_name)
-        return len(lobby_users) >= lobby_limit
-
+    def get_limit_server_lobby(self, name):
+        for lobby in self.server_lobbies:
+            if lobby["lobbyname"] == name:
+                return lobby["limit"]
+            
+    def isUserBlackListed(self,id):
+        for user in self.muted_users:
+            if user["id"] == id:
+                return user
+        return None
+            
     async def create_guild_document(self, guild_id, channel_id, server_name, lobby_name):
         guild_document = await self.bot.db.guilds_collection.find_one({"server_id": guild_id})
 
@@ -129,8 +137,8 @@ class OpenWorldServer(commands.Cog):
             # Issue: handle the issue of user selecting the full lobbies
             # ======================================================================================
             async def SelectLobby():
-                message = await self.show_lobbies(ctx,"Available Lobbies")
-                lobby =ConnectDropDown(ctx.message.author)
+                message = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
+                lobby =ConnectDropDown(ctx.message.author,self.server_lobbies)
                 
                 message_drp = await ctx.send(view=lobby)
                 try:
@@ -188,6 +196,7 @@ class OpenWorldServer(commands.Cog):
             while True:
                 lobby = await SelectLobby()
                 choice = await AboutLobby(lobby)
+               
                 if choice is True:
                     return {'message':'Success', 'message_data':sent_message, 'lobby': lobby} 
         
@@ -319,29 +328,47 @@ class OpenWorldServer(commands.Cog):
         # else it returns Non
         return None
 
+    def contains_malicious_url(self, content):
+        for url in self.malicious_urls:
+            if re.search(url['content'],content, re.IGNORECASE):
+                return True
+            
+        for word in self.malicious_words:
+            if word['content'].lower() in content.lower():
+                return True
+            
+        return False
+
     @commands.Cog.listener()
     async def on_message(self, message):
+        
         if message.content.startswith("a!") or message.author.bot:
             return
 
         guild_id = message.guild.id
         channel_id = message.channel.id
-
-        muted_collection = self.bot.db.muted_collection
-
+        user_id = message.author.id
+        sender = self.bot.get_user(user_id)
         guild_document = await self.find_guild(guild_id, channel_id)
+        muted = self.isUserBlackListed(user_id)
+
+        
         if not guild_document:
             return
-
-        user_id = message.author.id
-        muted_document =  await muted_collection.find_one({"server_id": user_id})
-
-        if muted_document:
+        
+        if muted:
+            await message.delete()
+            await sender.send(embed=Embed(description=f"You have been muted for {muted["reason"]}"))
             return
-    
+        
+        if self.contains_malicious_url(message.content):
+            await message.delete()
+            await message.author.send(embed = Embed( description= "Your message contains malicious content. Please refrain from using inappropriate language or sharing harmful links."))    
+            await self.log_report(message, "Sending Malicious Content")
+            return
         # Calls for process_message method
         await self.process_message(message,guild_document, channel_id)
-    
+
     
     async def process_message(self, message, guild_document, channel_id):
         # This function determines if where lobby should the message be sent 
@@ -408,14 +435,14 @@ class OpenWorldServer(commands.Cog):
         channel_id = ctx.channel.id
 
         guild_document = await self.find_guild(guild_id,channel_id)
-
         if guild_document:
 
             lobby = guild_document.get("channels",[])
-
+           
             for channel in lobby:
                 if channel["channel_id"] == channel_id:
-                    limit = self.lobby_limits[channel['lobby_name']]
+                    lobby_name = channel['lobby_name']
+                    limit = self.get_limit_server_lobby(lobby_name)
                     guilds = await self.getAllGuildUnderLobby(channel['lobby_name'])
                     connection = await self.get_lobby_count(channel['lobby_name'])
 
@@ -447,12 +474,15 @@ class OpenWorldServer(commands.Cog):
             return await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='lobbies', description='Current Lobby description')
-    async def show_lobbies(self, ctx, title="Lobbies Online",description="Some description to add"):
+    async def show_lobbies(self, ctx):
+        await self.show_lobbies_embed(ctx, title="Lobbies Online",description="Some description to add")
+
+    async def show_lobbies_embed(self, ctx, title ,description):
         lobby_data = await self.getAllLobby()
         formatted_data = ""
 
         for data in lobby_data:
-            limit = self.lobby_limits[data['name']]
+            limit = self.get_limit_server_lobby(data["name"])
             connection = data['connection']
             
             if connection > limit - 5:
@@ -503,8 +533,8 @@ class OpenWorldServer(commands.Cog):
                 return choice.value
             
             async def SelectLobby():
-                message = await self.show_lobbies(ctx,"Available Lobbies")
-                lobby = ConnectDropDown(ctx.message.author)
+                message = await self.show_lobbies_embed(ctx,"Available Lobbies")
+                lobby = ConnectDropDown(ctx.message.author,self.server_lobbies)
                 message_drop = await ctx.send(view=lobby)
                 try:
                     await asyncio.wait_for(lobby.wait(), timeout=60)
@@ -525,6 +555,7 @@ class OpenWorldServer(commands.Cog):
                 if choice == False:
                     return {'message': 'Failed', 'message_data': None, "lobby": None}
                 response = await SelectLobby()
+                
                 if response['lobby']:
                     return {'message': 'Success', 'message_data': response["message"], "lobby":  response['lobby']}
 
@@ -596,7 +627,17 @@ class OpenWorldServer(commands.Cog):
         await Sequence(guild_id,channel_id)
 
 
-    
+    async def log_report(self,message,reason):
+        guild = self.bot.get_guild(939025934483357766)
+        target_channel = guild.get_channel(1230069779071762473)
+
+        embed = Embed(
+            title="Detected by system",
+            description= f"**User {message.author.name} has been flagged due {reason}**\n\n**Message:**\n\n {message.content}"
+        )
+        embed.set_footer(text = f"userid {message.author.id}")
+        await target_channel.send(embed=embed)
+
     #   async def is_private_lobby(self, lobby_name: str, author: discord.Member, ctx) -> bool:
     #       private_lobbies = self.private_lobbies
     
@@ -625,7 +666,7 @@ class OpenWorldServer(commands.Cog):
         return allowed_mentions   
     
     async def getAllLobby(self, current_guild=None):
-        lobby_data = {lobby: 0 for lobby in self.server_lobbies}
+        lobby_data = {lobby["lobbyname"]: 0 for lobby in self.server_lobbies}
         
         if current_guild is not None:
             filter_query = {"_id": {"$ne": current_guild}}
@@ -645,7 +686,21 @@ class OpenWorldServer(commands.Cog):
         formatted_data = [{"name": lobby, "connection": count} for lobby, count in lobby_data.items()]
         
         return formatted_data
-        
+    
+    async def getLobbyConnections(self,lobby_name,current_guild=None):
+        if current_guild is not None:
+            filter_query = {"_id": {"$ne": current_guild}, "channels.lobby_name": lobby_name}
+        else:
+            filter_query = {"channels.lobby_name": lobby_name}  # Filter by lobby_name if current_guild is None
+        lobby_connection_count = 0
+        async for document in self.bot.db.guilds_collection.find(filter_query):
+            channels = document.get("channels", [])
+            
+            for channel in channels:
+                if channel['lobby_name'] == lobby_name:
+                    lobby_connection_count += 1
+
+        return {"name": lobby_name, "connection": lobby_connection_count}
     # Scuffed Code
     async def getAllGuildUnderLobby(self, lobby_name):
         guilds = []
