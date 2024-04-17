@@ -156,7 +156,7 @@ class GlobalChatMod(commands.Cog):
     #     await ctx.send(embed=discord.Embed( description="Lobby Doesnt Exists"))
     
     @commands.command(name='add_block_link')
-    @commands.is_owner()
+    #@commands.is_owner()
     async def AddblockLinks(self, ctx, content):
         channel = ctx.guild.get_channel(self.controlChannel)
         if ctx.channel.id != self.controlChannel:
@@ -169,7 +169,7 @@ class GlobalChatMod(commands.Cog):
         ))
     
     @commands.command(name='add_bad_words')
-    @commands.is_owner()
+    #@commands.is_owner()
     async def Addblockwords(self,ctx, content):
         channel = ctx.guild.get_channel(self.controlChannel)
         if ctx.channel.id != self.controlChannel:
