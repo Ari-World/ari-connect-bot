@@ -7,11 +7,15 @@ class GlobalChatMod(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
         self.controlChannel = 975254983559766086
+        
+    async def cog_load(self):
         self.openworld_cog = self.bot.get_cog("OpenWorldServer")
         self.server_lobbies = self.openworld_cog.server_lobbies
         self.muted_users = self.openworld_cog.muted_users
         self.malicious_urls = self.openworld_cog.malicious_urls
         self.malicious_words = self.openworld_cog.malicious_words
+        print("Add Data in Global chat is reloaded")
+        
     @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
     async def report_user(self, ctx,username, reason, attacment:discord.Attachment):
         if not attacment:
@@ -46,11 +50,12 @@ class GlobalChatMod(commands.Cog):
     @commands.command(name="listmuted")
     async def getAllMuted(self,ctx):
         format_data = ""
-        x=1
-        for data in self.muted_users:
-           text = f"{x}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
-           format_data += text + "\n"
-           x += 1
+        if self.muted_users:
+            x=1
+            for data in self.muted_users:
+                text = f"{x}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
+                format_data += text + "\n"
+                x += 1
 
         embed = discord.Embed(
             title="Muted List",
@@ -67,6 +72,7 @@ class GlobalChatMod(commands.Cog):
         if ctx.channel.id != self.controlChannel:
             await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
             return
+        
         if user.bot or not user:
             await ctx.send(embed=discord.Embed( description=" No User Found"))
             return
@@ -111,10 +117,11 @@ class GlobalChatMod(commands.Cog):
             await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
             return  
         
-        for x in self.server_lobbies:
-            if name == x['lobbyname']:
-                await ctx.send(embed=discord.Embed( description="Lobby Exists"))
-                return
+        if self.server_lobbies:
+            for x in self.server_lobbies:
+                if name == x['lobbyname']:
+                    await ctx.send(embed=discord.Embed( description="Lobby Exists"))
+                    return
 
         data = {
             "lobbyname":name,
@@ -125,21 +132,28 @@ class GlobalChatMod(commands.Cog):
         self.server_lobbies.append(data)
         await ctx.send(embed=discord.Embed( description=f" Lobby {name} has been newly added"))
     
-    @commands.hybrid_command(name='remove_lobby')
-    @commands.is_owner()
-    async def RemoveLobbies(self, ctx, name:str):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return  
-       
-        for x in self.server_lobbies:
-            if name == x['lobbyname']:
-                await self.bot.lobby_repository.delete(name)
-                self.server_lobbies.remove(x)
-                return
-                
-        await ctx.send(embed=discord.Embed( description="Lobby Doesnt Exists"))
+    # Doesn't Work
+    # @commands.hybrid_command(name='remove_lobby')
+    # @commands.is_owner()
+    # async def RemoveLobbies(self, ctx, name:str):
+    #     channel = ctx.guild.get_channel(self.controlChannel)
+    #     if ctx.channel.id != self.controlChannel:
+    #         await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+    #         return  
+    #     lobby = await self.bot.lobby_repository.findOne(name)
+    #     print(self.server_lobbies)
+    #     if self.server_lobbies and lobby:
+    #         for x in self.server_lobbies:
+    #             print(x['lobbyname'])
+    #             print(lobby['lobbyname'])
+    #             print(len(x['lobbyname']))
+    #             print(len(lobby['lobbyname']))
+    #             if lobby['lobbyname'].strip() == x['lobbyname'].strip():
+    #                 await self.bot.lobby_repository.delete(lobby['lobbyname'])
+    #                 self.server_lobbies.remove(x)
+    #                 return
+                                
+    #     await ctx.send(embed=discord.Embed( description="Lobby Doesnt Exists"))
     
     @commands.command(name='add_block_link')
     @commands.is_owner()

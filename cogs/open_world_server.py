@@ -21,7 +21,7 @@ class OpenWorldServer(commands.Cog):
 
     # Caching data
     async def cog_load(self):
-        self.server_lobbies = await self.bot.lobby_repository.getAllLobbies()
+        self.server_lobbies = await self.bot.lobby_repository.findAll()
         print(self.server_lobbies)
         self.muted_users = await self.bot.muted_repository.findAll()
         print(self.muted_users)
@@ -29,9 +29,12 @@ class OpenWorldServer(commands.Cog):
         print(self.malicious_urls)
         self.malicious_words = await self.bot.malicious_words.findAll()
         print(self.malicious_words)
+
     @commands.command(name="reloaddata")
     async def reload(self,ctx):
+        self.gc_cog = self.bot.get_cog("GlobalChatMod")
         await self.cog_load()
+        await self.gc_cog.cog_load()
         await ctx.send(embed=Embed(
             description=" Data Loaded ",
         ))
@@ -42,9 +45,10 @@ class OpenWorldServer(commands.Cog):
                 return lobby["limit"]
             
     def isUserBlackListed(self,id):
-        for user in self.muted_users:
-            if user["id"] == id:
-                return user
+        if self.muted_users:
+            for user in self.muted_users:
+                if user["id"] == id:
+                    return user
         return None
             
     async def create_guild_document(self, guild_id, channel_id, server_name, lobby_name):
@@ -329,13 +333,14 @@ class OpenWorldServer(commands.Cog):
         return None
 
     def contains_malicious_url(self, content):
-        for url in self.malicious_urls:
-            if re.search(url['content'],content, re.IGNORECASE):
-                return True
-            
-        for word in self.malicious_words:
-            if word['content'].lower() in content.lower():
-                return True
+        if self.malicious_urls and self.malicious_words:
+            for url in self.malicious_urls:
+                if re.search(url['content'],content, re.IGNORECASE):
+                    return True
+                
+            for word in self.malicious_words:
+                if word['content'].lower() in content.lower():
+                    return True
             
         return False
 
@@ -350,6 +355,7 @@ class OpenWorldServer(commands.Cog):
         user_id = message.author.id
         sender = self.bot.get_user(user_id)
         guild_document = await self.find_guild(guild_id, channel_id)
+        
         muted = self.isUserBlackListed(user_id)
 
         
@@ -380,7 +386,6 @@ class OpenWorldServer(commands.Cog):
     async def send_to_matching_lobbies(self, message, lobby_name, channel_id):
 
         guilds_collection = self.bot.db.guilds_collection
-        tasks = []
 
         message_queue = asyncio.Queue()
         async for document in guilds_collection.find():
@@ -435,43 +440,45 @@ class OpenWorldServer(commands.Cog):
         channel_id = ctx.channel.id
 
         guild_document = await self.find_guild(guild_id,channel_id)
-        if guild_document:
 
-            lobby = guild_document.get("channels",[])
-           
-            for channel in lobby:
-                if channel["channel_id"] == channel_id:
-                    lobby_name = channel['lobby_name']
-                    limit = self.get_limit_server_lobby(lobby_name)
-                    guilds = await self.getAllGuildUnderLobby(channel['lobby_name'])
-                    connection = await self.get_lobby_count(channel['lobby_name'])
+        if self.server_lobbies:
+            if guild_document:
 
-                    data = ""
-                    x = 1
-
-                    if guilds:
-                        for guild in guilds:
-                            
-                            text = f"**{x}**) **{guild['server_name']}**"
-                            data += text + "\n\n"
-                            x += 1
-                    else:
-                        data = "There's no guild connected to this lobby"
-
-                    embed = Embed(
-                        title= f"{channel['lobby_name']} - {connection}/{limit}",
-                        description= "Some description",
-                        color= 0xFFC0CB 
-                    )
-                    embed.add_field(name="Guild Connected to the lobby", value = data)
-                    return await ctx.send(embed=embed)
-        else:
-            embed = Embed(
-                description=f":no_entry: **Your channel is not registered for Open World Chat**",
-                color=0xFFC0CB
-            )
+                lobby = guild_document.get("channels",[])
             
-            return await ctx.send(embed=embed)
+                for channel in lobby:
+                    if channel["channel_id"] == channel_id:
+                        lobby_name = channel['lobby_name']
+                        limit = self.get_limit_server_lobby(lobby_name)
+                        guilds = await self.getAllGuildUnderLobby(channel['lobby_name'])
+                        connection = await self.get_lobby_count(channel['lobby_name'])
+
+                        data = ""
+                        x = 1
+
+                        if guilds:
+                            for guild in guilds:
+                                
+                                text = f"**{x}**) **{guild['server_name']}**"
+                                data += text + "\n\n"
+                                x += 1
+                        else:
+                            data = "There's no guild connected to this lobby"
+
+                        embed = Embed(
+                            title= f"{channel['lobby_name']} - {connection}/{limit}",
+                            description= "Some description",
+                            color= 0xFFC0CB 
+                        )
+                        embed.add_field(name="Guild Connected to the lobby", value = data)
+                        return await ctx.send(embed=embed)
+            else:
+                embed = Embed(
+                    description=f":no_entry: **Your channel is not registered for Open World Chat**",
+                    color=0xFFC0CB
+                )
+                
+                return await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='lobbies', description='Current Lobby description')
     async def show_lobbies(self, ctx):
