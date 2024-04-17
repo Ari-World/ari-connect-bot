@@ -6,7 +6,7 @@ from discord import app_commands
 class GlobalChatMod(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
-        self.controlChannel = 975254983559766086
+        self.controlChannel = 1230160106369318965
         
     async def cog_load(self):
         self.openworld_cog = self.bot.get_cog("OpenWorldServer")
