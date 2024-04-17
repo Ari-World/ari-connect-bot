@@ -540,7 +540,7 @@ class OpenWorldServer(commands.Cog):
                 return choice.value
             
             async def SelectLobby():
-                message = await self.show_lobbies_embed(ctx,"Available Lobbies")
+                message = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
                 lobby = ConnectDropDown(ctx.message.author,self.server_lobbies)
                 message_drop = await ctx.send(view=lobby)
                 try:
