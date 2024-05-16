@@ -21,8 +21,9 @@ class Ari(commands.Bot):
     self.synced = False
     self.repositoryInitialize(self.db)
 
-  def startBot(self):
-    self.run(self.token)
+  async def start(self):
+    await self.login(self.token)
+    await self.connect()
     
   async def on_ready(self):
     await self.wait_until_ready()
@@ -82,6 +83,5 @@ class Ari(commands.Bot):
     self.lobby_repository = LobbyRepository(db)
     self.malicious_urls = MaliciousURLRepository(db)
     self.malicious_words = MaliciousWordsRepository(db)
-if __name__ == "__main__":
-  bot = Ari()
-  bot.startBot()
+
+
