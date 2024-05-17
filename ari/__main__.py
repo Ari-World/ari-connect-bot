@@ -1,30 +1,23 @@
 
 import asyncio
-from enum import IntEnum
 import functools
 import logging
 import sys
+import custom_logging
 from core.bot import Ari
-
+from core._cli import ExitCodes
 log = logging.getLogger("ari.main")
 
-# This needs to be an int enum to be used
-# with sys.exit
-class ExitCodes(IntEnum):
-    #: Clean shutdown (through signals, keyboard interrupt, [p]shutdown, etc.).
-    SHUTDOWN = 0
-    #: An unrecoverable error occurred during application's runtime.
-    CRITICAL = 1
-    #: The CLI command was used incorrectly, such as when the wrong number of arguments are given.
-    INVALID_CLI_USAGE = 2
-    #: Restart was requested by the bot owner (probably through [p]restart command).
-    RESTART = 26
-    #: Some kind of configuration error occurred.
-    CONFIGURATION_ERROR = 78  # Exit code borrowed from os.EX_CONFIG.
+#
+#                   Ari - Connect
+#                  ( Early Access )
+#
+#   Original Idea by Flames / Aryan
+#   Further Developed by Khesir
+#
 
 
-
-def shutdown_handler(ari: Ari,signal_type=None, exit_code=None):
+async def shutdown_handler(ari: Ari,signal_type=None, exit_code=None):
     if signal_type:
         log.info("%s received. Quitting...", signal_type.name)
         # Do not collapse the below line into other logic
@@ -35,19 +28,13 @@ def shutdown_handler(ari: Ari,signal_type=None, exit_code=None):
         log.info("Shutting down from unhandled exception")
         ari._shutdown_mode = ExitCodes.CRITICAL
 
-    # TODO: Handles Ari Shutdown
-    # if exit_code is not None:
-    #     ari._shutdown_mode = exit_code
-
-    # try:
-    #     if not ari.is_closed():
-    #         await ari.close()
-    # finally:
-    #     # Then cancels all outstanding tasks other than ourselves
-    #     pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    #     [task.cancel() for task in pending]
-    #     await asyncio.gather(*pending, return_exceptions=True)
-
+    if exit_code is not None:
+        pass
+    try:
+        if not ari.is_closed():
+            await ari.close()
+    except:
+        pass
 def ari_exception_handler(ari, task: asyncio.Future):
     """
     This is set as a done callback for Ari
@@ -80,7 +67,7 @@ async def run_bot(ari : Ari) -> None:
     """
     This runs the bot.
     """
-    ari.logging.init_logging(
+    custom_logging.init_logging(
         level = 0
     )
     # TODO: Maybe setting the bot configuration or manipulating the config here is a good practice.
@@ -135,8 +122,8 @@ def main():
         asyncio.set_event_loop(None)
         loop.stop()
         loop.close()
-    # Something fancy! 
-    sys.exit()
+    exit_code = ari._shutdown_mode if ari is not None else ExitCodes.CRITICAL
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

@@ -146,7 +146,7 @@ class AriLogRender(LogRender):
         # Time Rendering
         if self.show_time:
             log_time = log_time or console.get_datetime()
-            log_time_display = log_time.strtime(time_format or self.time_format)
+            log_time_display = log_time.strftime(time_format or self.time_format)
             if log_time_display == self._last_time:
                 output.append(" " * (len(log_time_display) + 1))
             else:
@@ -258,7 +258,7 @@ class AriRichHandler(RichHandler):
             self.console.print(traceback)    
 
 
-def init_logging(level: int, location: pathlib.Path) -> None:
+def init_logging(level: int) -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 

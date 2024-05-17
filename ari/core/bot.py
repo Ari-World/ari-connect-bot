@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import sys
 from typing import *
 import discord
 from discord import Intents
@@ -12,11 +13,13 @@ from plugins.lobby_repository import LobbyRepository
 from plugins.malurl_repository import MaliciousURLRepository
 from plugins.malword_repository import MaliciousWordsRepository
 from plugins.muted_repository import MutedRepository
+from core._cli import ExitCodes
 
 log = logging.getLogger("ari")
 
 class Ari(commands.Bot):
   def __init__(self, *args, **kwargs):
+    self._shutdown_mode = ExitCodes.CRITICAL
     self.config = config.load_config()
     self.token = self.config['DISCORD_API_TOKEN']
     self.db = db
@@ -44,17 +47,17 @@ class Ari(commands.Bot):
         status=discord.Status.online,
         activity=activity
     )
-    print("Ari Toram is Online")
+    log.info("Ari Toram is Online")
   
   async def on_guild_join(self,guild):
-    print(f'Bot has been added to a new server {guild.name}')
+    log.info(f'Bot has been added to a new server {guild.name}')
     guildx = self.get_guild(939025934483357766)
     target_log = guildx.get_channel(1230069779071762473)
     target_channel = guild.system_channel  # Use the system channel for the guild
     if target_channel is not None:  # Ensure there's a system channel
         await target_channel.send(f"💖 **Thank you for inviting {self.user.name}!!**\n\n__**A brief intro**__\nHey Everyone! My main purpose is creating an Inter Guild / Server Connectivity to bring the world closer together!\nHope you'll find my application useful! Thankyouuu~\n\nType `a!about` to know more about me and my usage!\n\n**__Servers Connected__**\n{len(self.guilds)}\n\n")
     else:
-        print("System channel not found. Unable to send welcome message.")
+        log.warning("System channel not found. Unable to send welcome message.")
     await target_log.send(embed=discord.Embed(description=f'Bot has been added to a new server {guild.name}'))
 
   async def on_command_error(self,ctx, error):
@@ -67,6 +70,9 @@ class Ari(commands.Bot):
     else:
        await ctx.send(error)
 
+  # TODO: Create a cog manager
+  # TODO: Create a command manager
+  # TODO: Create a dev manager
   # async def setup_hook(self):
     
   #   async def load_cogs(directory):
@@ -81,10 +87,33 @@ class Ari(commands.Bot):
    
   #   await load_cogs("../cogs")
   
+  # TODO: Create a database mangager
   def repositoryInitialize(self,db):
     self.muted_repository = MutedRepository(db)
     self.lobby_repository = LobbyRepository(db)
     self.malicious_urls = MaliciousURLRepository(db)
     self.malicious_words = MaliciousWordsRepository(db)
+  
+  async def close(self):
+     await super().close()
 
+  async def shutdown( self, *,restart: bool = False):
+    """Gracefully quit.
+
+    The program will exit with code :code:`0` by default.
+
+    Parameters
+    ----------
+    restart : bool
+        If :code:`True`, the program will exit with code :code:`26`. If the
+        launcher sees this, it will attempt to restart the bot.
+
+    """
+    if not restart:
+      self._shutdown_mode = ExitCodes.SHUTDOWN
+    else:
+      self._shutdown_mode = ExitCodes.RESTART
+
+    await self.close()
+    sys.exit(self._shutdown_mode)
 
