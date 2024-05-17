@@ -17,6 +17,13 @@ from core._cli import ExitCodes
 
 log = logging.getLogger("ari")
 
+class _NoOwnerSet(RuntimeError):
+    """Raised when there is no owner set for the instance that is trying to start."""
+
+# TODO: Create a cog manager
+# TODO: Create a command manager
+# TODO: Create a dev manager
+# TODO: Handles Globbal Config and Guild Config
 class Ari(commands.Bot):
   def __init__(self, *args, **kwargs):
     self._shutdown_mode = ExitCodes.CRITICAL
@@ -70,9 +77,27 @@ class Ari(commands.Bot):
     else:
        await ctx.send(error)
 
-  # TODO: Create a cog manager
-  # TODO: Create a command manager
-  # TODO: Create a dev manager
+  
+  def _setup_owners(self) -> None:
+      if self.application.team:
+          if self._use_team_features:
+              self.owner_ids.update(m.id for m in self.application.team.members)
+      elif self._owner_id_overwrite is None:
+          self.owner_ids.add(self.application.owner.id)
+
+      if not self.owner_ids:
+          raise _NoOwnerSet("Bot doesn't have any owner set!")
+
+  async def setup_hook(self) -> None:
+      self._setup_owners()
+      await self._pre_connect()
+
+  async def _pre_connect(self) -> None:
+      """
+      This should only be run once, prior to connecting to Discord gateway.
+      """
+      # Add Cogs here
+      
   # async def setup_hook(self):
     
   #   async def load_cogs(directory):
