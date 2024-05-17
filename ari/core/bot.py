@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 from typing import *
@@ -11,6 +12,8 @@ from plugins.lobby_repository import LobbyRepository
 from plugins.malurl_repository import MaliciousURLRepository
 from plugins.malword_repository import MaliciousWordsRepository
 from plugins.muted_repository import MutedRepository
+
+log = logging.getLogger("ari")
 
 class Ari(commands.Bot):
   def __init__(self, *args, **kwargs):
@@ -64,19 +67,19 @@ class Ari(commands.Bot):
     else:
        await ctx.send(error)
 
-  async def setup_hook(self):
+  # async def setup_hook(self):
     
-    async def load_cogs(directory):
-        await self.load_extension("cogs.open_world_server")
+  #   async def load_cogs(directory):
+  #       await self.load_extension("cogs.open_world_server")
 
-        for filename in os.listdir(directory):
-            if filename.endswith('.py') and not filename.startswith('__') and not filename.startswith('open_world_server'):
-                cog_name = f'cogs.{filename[:-3]}'
-                print(cog_name)
-                await self.load_extension(cog_name)
+  #       for filename in os.listdir(directory):
+  #           if filename.endswith('.py') and not filename.startswith('__') and not filename.startswith('open_world_server'):
+  #               cog_name = f'cogs.{filename[:-3]}'
+  #               print(cog_name)
+  #               await self.load_extension(cog_name)
             
    
-    await load_cogs("./cogs")
+  #   await load_cogs("../cogs")
   
   def repositoryInitialize(self,db):
     self.muted_repository = MutedRepository(db)
