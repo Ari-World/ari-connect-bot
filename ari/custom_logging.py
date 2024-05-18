@@ -1,4 +1,5 @@
 import pathlib
+import re
 import sys
 from datetime import datetime # What?? dont get it but it works
 
@@ -120,11 +121,12 @@ class RotatingFileHandler(logging.handlers.RotatingFileHandler):
 class FixedMonokaiStyle(MonokaiStyle):
     styles = {**MonokaiStyle.styles, Token: "#f8f8f2"}
 
-class AriTraceBack(Traceback):
-    # Dep-WARN
+
+class AriTraceback(Traceback):
+    # DEP-WARN
     @group()
     def _render_stack(self, stack):
-        for obj in super().render_stack.__wrapped__(self, stack):
+        for obj in super()._render_stack.__wrapped__(self, stack):
             if obj != "":
                 yield obj
 
@@ -214,7 +216,7 @@ class AriRichHandler(RichHandler):
             assert exc_type is not None
             assert exc_value is not None
             # Where is this coming from?? will research more
-            traceback = AriTraceBack.from_exception(
+            traceback = AriTraceback.from_exception(
                 exc_type,
                 exc_value,
                 exc_traceback,

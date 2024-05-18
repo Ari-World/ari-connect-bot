@@ -1,0 +1,4 @@
+
+
+class CogManager:
+    pass

@@ -1,3 +1,5 @@
+import asyncio
+import datetime
 import logging
 import os
 import random
@@ -8,6 +10,12 @@ from discord import Intents
 from plugins import config
 from discord.ext import commands
 from discord import app_commands
+
+from .core_commands import Core
+from .dev_commands import Dev
+from ._events import init_events
+from ._global_checks import init_global_checks
+
 from plugins.db import db
 from plugins.lobby_repository import LobbyRepository
 from plugins.malurl_repository import MaliciousURLRepository
@@ -23,79 +31,89 @@ class _NoOwnerSet(RuntimeError):
 # TODO: Create a cog manager
 # TODO: Create a command manager
 # TODO: Create a dev manager
+# TODO: Handles Data in .env files a.k.a datamanager
+# TODO: Handles Database a.k.a mongodbManager
 # TODO: Handles Globbal Config and Guild Config
+# TODO: Create Event Handler
+# TODO: Create cog for webhook / or a module for webhook
 class Ari(commands.Bot):
   def __init__(self, *args, **kwargs):
-    self._shutdown_mode = ExitCodes.CRITICAL
-    self.config = config.load_config()
-    self.token = self.config['DISCORD_API_TOKEN']
-    self.db = db
-    super().__init__(command_prefix= self.config['DISCORD_COMMAND_PREFIX'], intents=Intents.all())
-    self.synced = False
-    self.repositoryInitialize(self.db)
+      self._shutdown_mode = ExitCodes.CRITICAL
+
+      self.config = config.load_config()
+      self.token = self.config['DISCORD_API_TOKEN']
+      self.db = db
+      super().__init__(command_prefix= self.config['DISCORD_COMMAND_PREFIX'], intents=Intents.all())
+      self.synced = False
+      self.repositoryInitialize(self.db)
+      self._uptime = None
+      self._ari_ready = asyncio.Event()
+
 
   async def start(self):
-    await self.login(self.token)
-    await self.connect()
-    
-  async def on_ready(self):
-    await self.wait_until_ready()
-    if not self.synced:
-       await self.tree.sync()
-       self.synced = True
-    guild_count = len(self.guilds)
-    member_count = sum(len(guild.members) for guild in self.guilds)
-
-    activity = discord.Activity(
-        type=discord.ActivityType.watching,
-        name=f"over {guild_count} Guilds with {member_count} Members!"
-    )
-    await self.change_presence(
-        status=discord.Status.online,
-        activity=activity
-    )
-    log.info("Ari Toram is Online")
+      await self._pre_login()
+      log.info("Pre-login Done.")
+      log.info("Now Logging in..")
+      await self.login(self.token)
+      await self.connect()
   
-  async def on_guild_join(self,guild):
-    log.info(f'Bot has been added to a new server {guild.name}')
-    guildx = self.get_guild(939025934483357766)
-    target_log = guildx.get_channel(1230069779071762473)
-    target_channel = guild.system_channel  # Use the system channel for the guild
-    if target_channel is not None:  # Ensure there's a system channel
-        await target_channel.send(f"💖 **Thank you for inviting {self.user.name}!!**\n\n__**A brief intro**__\nHey Everyone! My main purpose is creating an Inter Guild / Server Connectivity to bring the world closer together!\nHope you'll find my application useful! Thankyouuu~\n\nType `a!about` to know more about me and my usage!\n\n**__Servers Connected__**\n{len(self.guilds)}\n\n")
-    else:
-        log.warning("System channel not found. Unable to send welcome message.")
-    await target_log.send(embed=discord.Embed(description=f'Bot has been added to a new server {guild.name}'))
-
-  async def on_command_error(self,ctx, error):
-    if isinstance(error, commands.CommandOnCooldown):
-        msg = '**Command on cooldown** Retry after **{:.2f}s**'.format(
-            error.retry_after)
-        await ctx.send(msg)
-    elif not isinstance(error, Exception):
-        await ctx.send(error)
-    else:
-       await ctx.send(error)
-
-  
-  def _setup_owners(self) -> None:
-      if self.application.team:
-          if self._use_team_features:
-              self.owner_ids.update(m.id for m in self.application.team.members)
-      elif self._owner_id_overwrite is None:
-          self.owner_ids.add(self.application.owner.id)
-
-      if not self.owner_ids:
-          raise _NoOwnerSet("Bot doesn't have any owner set!")
+  async def _pre_login(self) -> None:
+      """
+      This should only be run once, prior to logging in to Discord REST API.
+      """
+      init_events(self)
 
   async def setup_hook(self) -> None:
-      self._setup_owners()
       await self._pre_connect()
 
   async def _pre_connect(self) -> None:
       """
       This should only be run once, prior to connecting to Discord gateway.
       """
+      await self.add_cog(Core(self))
+      await self.add_cog(Dev())
+
+
+  # async def on_ready(self):
+  #     await self.wait_until_ready()
+  #     if not self.synced:
+  #       await self.tree.sync()
+  #       self.synced = True
+  #     guild_count = len(self.guilds)
+  #     member_count = sum(len(guild.members) for guild in self.guilds)
+
+  #     activity = discord.Activity(
+  #         type=discord.ActivityType.watching,
+  #         name=f"over {guild_count} Guilds with {member_count} Members!"
+  #     )
+  #     await self.change_presence(
+  #         status=discord.Status.online,
+  #         activity=activity
+  #     )
+  #     log.info("Ari Toram is Online")
+    
+  # async def on_guild_join(self,guild):
+  #     log.info(f'Bot has been added to a new server {guild.name}')
+  #     guildx = self.get_guild(939025934483357766)
+  #     target_log = guildx.get_channel(1230069779071762473)
+  #     target_channel = guild.system_channel  # Use the system channel for the guild
+  #     if target_channel is not None:  # Ensure there's a system channel
+  #         await target_channel.send(f"💖 **Thank you for inviting {self.user.name}!!**\n\n__**A brief intro**__\nHey Everyone! My main purpose is creating an Inter Guild / Server Connectivity to bring the world closer together!\nHope you'll find my application useful! Thankyouuu~\n\nType `a!about` to know more about me and my usage!\n\n**__Servers Connected__**\n{len(self.guilds)}\n\n")
+  #     else:
+  #         log.warning("System channel not found. Unable to send welcome message.")
+  #     await target_log.send(embed=discord.Embed(description=f'Bot has been added to a new server {guild.name}'))
+
+  # async def on_command_error(self,ctx, error):
+  #     if isinstance(error, commands.CommandOnCooldown):
+  #         msg = '**Command on cooldown** Retry after **{:.2f}s**'.format(
+  #             error.retry_after)
+  #         await ctx.send(msg)
+  #     elif not isinstance(error, Exception):
+  #         await ctx.send(error)
+  #     else:
+  #       await ctx.send(error)
+
+
       # Add Cogs here
       
   # async def setup_hook(self):
@@ -142,3 +160,14 @@ class Ari(commands.Bot):
     await self.close()
     sys.exit(self._shutdown_mode)
 
+
+  @property
+  def uptime(self) -> datetime:
+      """Allow access to the value, but we don't want cog creators setting it"""
+      return self._uptime
+
+  @uptime.setter
+  def uptime(self, value) -> NoReturn:
+      raise RuntimeError(
+          "Hey, we're cool with sharing info about the uptime, but don't try and assign to it please."
+      )
