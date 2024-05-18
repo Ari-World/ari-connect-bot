@@ -44,7 +44,11 @@ def init_events(bot):
     @bot.event
     async def on_ready():
         try:
+            
             await _on_ready()
+            if not bot.synced:
+                await bot.tree.sync()
+                bot.synced = True
         except Exception as exc:
             log.critical("The bot failed to get ready!", exc_info=exc)
             sys.exit(ExitCodes.CRITICAL)

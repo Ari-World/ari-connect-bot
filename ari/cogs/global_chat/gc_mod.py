@@ -199,6 +199,5 @@ class GlobalChatMod(commands.Cog):
         
         await target_channel.send(embed=embed)
 
-        
 async def setup(bot:commands.Bot):
     await bot.add_cog(GlobalChatMod(bot))

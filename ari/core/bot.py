@@ -15,6 +15,7 @@ from .core_commands import Core
 from .dev_commands import Dev
 from ._events import init_events
 from ._global_checks import init_global_checks
+from .cog_manager import CogManager
 
 from plugins.db import db
 from plugins.lobby_repository import LobbyRepository
@@ -28,57 +29,104 @@ log = logging.getLogger("ari")
 class _NoOwnerSet(RuntimeError):
     """Raised when there is no owner set for the instance that is trying to start."""
 
-# TODO: Create a cog manager
-# TODO: Create a command manager
-# TODO: Create a dev manager
 # TODO: Handles Data in .env files a.k.a datamanager
 # TODO: Handles Database a.k.a mongodbManager
+# TODO: Global Chat fix with new Structure
 # TODO: Handles Globbal Config and Guild Config
-# TODO: Create Event Handler
 # TODO: Create cog for webhook / or a module for webhook
 class Ari(commands.Bot):
-  def __init__(self, *args, **kwargs):
-      self._shutdown_mode = ExitCodes.CRITICAL
+    def __init__(self, *args, **kwargs):
+        self._shutdown_mode = ExitCodes.CRITICAL
 
-      self.config = config.load_config()
-      self.token = self.config['DISCORD_API_TOKEN']
-      self.db = db
-      super().__init__(command_prefix= self.config['DISCORD_COMMAND_PREFIX'], intents=Intents.all())
-      self.synced = False
-      self.repositoryInitialize(self.db)
-      self._uptime = None
-      self._ari_ready = asyncio.Event()
+        self.config = config.load_config()
+        self.token = self.config['DISCORD_API_TOKEN']
+        self.db = db
+        super().__init__(command_prefix= self.config['DISCORD_COMMAND_PREFIX'], intents=Intents.all())
+        self.synced = False
+        self.repositoryInitialize(self.db)
+        self._uptime = None
+        self._cog_mngr = CogManager()
 
 
-  async def start(self):
-      await self._pre_login()
-      log.info("Pre-login Done.")
-      log.info("Now Logging in..")
-      await self.login(self.token)
-      await self.connect()
-  
-  async def _pre_login(self) -> None:
-      """
-      This should only be run once, prior to logging in to Discord REST API.
-      """
-      init_events(self)
+    async def start(self):
+        await self._pre_login()
+        await self.login(self.token)
+        await self.connect()
+    
+    async def _pre_login(self) -> None:
+        """
+        This should only be run once, prior to logging in to Discord REST API.
+        """
+        init_events(self)
 
-  async def setup_hook(self) -> None:
-      await self._pre_connect()
+    async def setup_hook(self) -> None:
+            await self._pre_connect()
 
-  async def _pre_connect(self) -> None:
-      """
-      This should only be run once, prior to connecting to Discord gateway.
-      """
-      await self.add_cog(Core(self))
-      await self.add_cog(Dev())
+    async def _pre_connect(self) -> None:
+        """
+        This should only be run once, prior to connecting to Discord gateway.
+        """
+        await self.add_cog(Core(self))
+        await self.add_cog(Dev())
+        log.info("Loading cogs")
+        try:
+            cogs_specs = await self._cog_mngr.find_cogs()
+            for spec in cogs_specs:
+                try:
+                    await asyncio.wait_for(self.load_extension(spec.name), 30)
+                    log.info(f"Added {spec.name}")
+                except asyncio.TimeoutError:
+                    log.exception("Failed to load package %s (timeout)", spec.name)
+                except Exception as e:
+                    log.exception("Failed to load package %s", spec.name, exc_info=e)
+        except RuntimeError as e:
+            log.error("Error finding core cogs: %s", e)
 
+    # TODO: Create a database mangager
+    def repositoryInitialize(self,db):
+        self.muted_repository = MutedRepository(db)
+        self.lobby_repository = LobbyRepository(db)
+        self.malicious_urls = MaliciousURLRepository(db)
+        self.malicious_words = MaliciousWordsRepository(db)
+    
+    async def close(self):
+        await super().close()
+
+    async def shutdown( self, *,restart: bool = False):
+        """Gracefully quit.
+
+        The program will exit with code :code:`0` by default.
+
+        Parameters
+        ----------
+        restart : bool
+            If :code:`True`, the program will exit with code :code:`26`. If the
+            launcher sees this, it will attempt to restart the bot.
+
+        """
+        if not restart:
+            self._shutdown_mode = ExitCodes.SHUTDOWN
+        else:
+            self._shutdown_mode = ExitCodes.RESTART
+
+        await self.close()
+        sys.exit(self._shutdown_mode)
+
+
+    @property
+    def uptime(self) -> datetime:
+        """Allow access to the value, but we don't want cog creators setting it"""
+        return self._uptime
+
+    @uptime.setter
+    def uptime(self, value) -> NoReturn:
+        raise RuntimeError(
+            "Hey, we're cool with sharing info about the uptime, but don't try and assign to it please."
+        )
 
   # async def on_ready(self):
   #     await self.wait_until_ready()
-  #     if not self.synced:
-  #       await self.tree.sync()
-  #       self.synced = True
+  #    
   #     guild_count = len(self.guilds)
   #     member_count = sum(len(guild.members) for guild in self.guilds)
 
@@ -130,44 +178,3 @@ class Ari(commands.Bot):
    
   #   await load_cogs("../cogs")
   
-  # TODO: Create a database mangager
-  def repositoryInitialize(self,db):
-    self.muted_repository = MutedRepository(db)
-    self.lobby_repository = LobbyRepository(db)
-    self.malicious_urls = MaliciousURLRepository(db)
-    self.malicious_words = MaliciousWordsRepository(db)
-  
-  async def close(self):
-     await super().close()
-
-  async def shutdown( self, *,restart: bool = False):
-    """Gracefully quit.
-
-    The program will exit with code :code:`0` by default.
-
-    Parameters
-    ----------
-    restart : bool
-        If :code:`True`, the program will exit with code :code:`26`. If the
-        launcher sees this, it will attempt to restart the bot.
-
-    """
-    if not restart:
-      self._shutdown_mode = ExitCodes.SHUTDOWN
-    else:
-      self._shutdown_mode = ExitCodes.RESTART
-
-    await self.close()
-    sys.exit(self._shutdown_mode)
-
-
-  @property
-  def uptime(self) -> datetime:
-      """Allow access to the value, but we don't want cog creators setting it"""
-      return self._uptime
-
-  @uptime.setter
-  def uptime(self, value) -> NoReturn:
-      raise RuntimeError(
-          "Hey, we're cool with sharing info about the uptime, but don't try and assign to it please."
-      )
