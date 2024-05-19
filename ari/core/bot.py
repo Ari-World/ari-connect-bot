@@ -17,7 +17,6 @@ from ._events import init_events
 from ._global_checks import init_global_checks
 from .cog_manager import CogManager
 
-from plugins.db import db
 from plugins.lobby_repository import LobbyRepository
 from plugins.malurl_repository import MaliciousURLRepository
 from plugins.malword_repository import MaliciousWordsRepository
@@ -35,22 +34,18 @@ class _NoOwnerSet(RuntimeError):
 # TODO: Handles Globbal Config and Guild Config
 # TODO: Create cog for webhook / or a module for webhook
 class Ari(commands.Bot):
+    
     def __init__(self, *args, **kwargs):
         self._shutdown_mode = ExitCodes.CRITICAL
-
-        self.config = config.load_config()
-        self.token = self.config['DISCORD_API_TOKEN']
-        self.db = db
-        super().__init__(command_prefix= self.config['DISCORD_COMMAND_PREFIX'], intents=Intents.all())
+        super().__init__(command_prefix= kwargs["prefix"], intents=Intents.all())
         self.synced = False
-        self.repositoryInitialize(self.db)
         self._uptime = None
         self._cog_mngr = CogManager()
 
 
-    async def start(self):
+    async def start(self, token):
         await self._pre_login()
-        await self.login(self.token)
+        await self.login(token)
         await self.connect()
     
     async def _pre_login(self) -> None:
@@ -82,7 +77,7 @@ class Ari(commands.Bot):
         except RuntimeError as e:
             log.error("Error finding core cogs: %s", e)
 
-    # TODO: Create a database mangager
+    # TODO: Create a MongoDriver mangager
     def repositoryInitialize(self,db):
         self.muted_repository = MutedRepository(db)
         self.lobby_repository = LobbyRepository(db)

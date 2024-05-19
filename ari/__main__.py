@@ -6,6 +6,8 @@ import sys
 import custom_logging
 from core.bot import Ari
 from core._cli import ExitCodes
+from core import data_mananger
+from core._driver._mongo import MongoDriver as driver
 log = logging.getLogger("ari.main")
 
 #
@@ -67,11 +69,22 @@ async def run_bot(ari : Ari) -> None:
     """
     This runs the bot.
     """
+    # Initialize the Database and ready for stuffs
+    await driver.initialize()
+
     custom_logging.init_logging(
         level = 0
     )
     # TODO: Maybe setting the bot configuration or manipulating the config here is a good practice.
-    await ari.start()
+    token = data_mananger.getDiscordToken()
+    prefix =  data_mananger.getPrefix()
+
+    if token and prefix:
+        await ari.start(token)
+    else:
+        log.critical("Token and prefix must be set in order to login")
+        sys.exit(ExitCodes.CONFIGURATION_ERROR)
+
     return None
 
 def main():
@@ -81,7 +94,10 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        ari = Ari()
+        # Loads all necessary configurations for the bot
+        data_mananger.load_basic_configuration()
+
+        ari = Ari(prefix=data_mananger.getPrefix())
 
         exc_handler = functools.partial(global_exception_handler,ari)
         loop.set_exception_handler(exc_handler)
