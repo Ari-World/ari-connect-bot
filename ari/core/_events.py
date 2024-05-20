@@ -46,9 +46,22 @@ def init_events(bot):
         try:
             
             await _on_ready()
+            await bot.wait_until_ready()
             if not bot.synced:
                 await bot.tree.sync()
                 bot.synced = True
+                guild_count = len(bot.guilds)
+                member_count = sum(len(guild.members) for guild in bot.guilds)
+
+                activity = discord.Activity(
+                    type=discord.ActivityType.watching,
+                    name=f"over {guild_count} Guilds with {member_count} Members!"
+                )
+                await bot.change_presence(
+                    status=discord.Status.online,
+                    activity=activity
+                )
+                log.info("Ari Toram is Online")
         except Exception as exc:
             log.critical("The bot failed to get ready!", exc_info=exc)
             sys.exit(ExitCodes.CRITICAL)
@@ -102,13 +115,3 @@ def init_events(bot):
         if invite_url:
             rich_console.print(f"\nInvite URL: {Text(invite_url, style=f'link {invite_url}')}")
             # We generally shouldn't care if the client supports it or not as Rich deals with it.
-       
-        activity = discord.Activity(
-          type=discord.ActivityType.watching,
-          name=f"over {guilds} Guilds with {users} Members!"
-        )
-        await bot.change_presence(
-            status=discord.Status.online,
-            activity=activity
-        )
-        log.info("Ari Toram is Online")

@@ -1,18 +1,16 @@
-import json
+
 import logging
 import discord
-import datetime
+
 import asyncio
-import time
+
 import re
-import random
-import io
+
 import aiohttp
-from typing import List
-from typing import Optional
-from discord import AllowedMentions
 from discord.ext import commands
 from discord import Embed
+from discord_webhook import DiscordEmbed, DiscordWebhook
+
 
 log = logging.getLogger("openworld.cog")
 
@@ -74,9 +72,12 @@ class OpenWorldServer(commands.Cog):
                     return user
         return None
             
-    async def create_guild_document(self, guild_id, channel_id, server_name, lobby_name):
-        guild_document = await self.bot.db.guilds_collection.find_one({"server_id": guild_id})
+    async def create_guild_document(self, guild_id, channel : discord.TextChannel, server_name, lobby_name):
 
+        channel_id = channel.id
+
+        guild_document = await self.bot.db.guilds_collection.find_one({"server_id": guild_id})
+        webhook = await channel.create_webhook(name=server_name)
         if guild_document:
 
             channels = guild_document.get("channels", [])
@@ -84,7 +85,7 @@ class OpenWorldServer(commands.Cog):
             if any(channel.get("channel_id") == channel_id for channel in channels):
                 return False 
 
-            channels.append({"channel_id": channel_id, "lobby_name": lobby_name})
+            channels.append({"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url})
             
           
             await self.bot.db.guilds_collection.update_one({"server_id": guild_id}, {"$set": {"channels": channels}})
@@ -92,8 +93,9 @@ class OpenWorldServer(commands.Cog):
 
             await self.bot.db.guilds_collection.insert_one({
                 "server_id": guild_id,
-                "channels": [{"channel_id": channel_id, "lobby_name": lobby_name}],
-                "server_name": server_name
+                "channels": [{"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url}],
+                "server_name": server_name,
+
             })
         return True
 
@@ -113,27 +115,72 @@ class OpenWorldServer(commands.Cog):
                     break
             # then update the data in the database
             await self.bot.db.guilds_collection.update_one({"server_id": guild_id}, {"$set": {"channels": channels}})
-
+            
     async def delete_guild_document(self, guild_id: int, channel_id: int):
         # Gets the guild data
         guild_document = await self.bot.db.guilds_collection.find_one({"server_id": guild_id})
 
-        # if Data exists
+        # If data exists
         if guild_document:
-            # Get all Channels within the guild
+            # Get all channels within the guild
             channels = guild_document.get("channels", [])
-            
-            # Checks out list if the channel exists.
-            channels = [channel for channel in channels if channel["channel_id"] != channel_id]
-            
-            # If true
-            if channels:
-                # Update the data
-                await self.bot.db.guilds_collection.update_one({"server_id": guild_id}, {"$set": {"channels": channels}})
-            else:
-                # else delete.
-                await self.bot.db.guilds_collection.delete_one({"server_id": guild_id})
 
+            # Find the channel to delete and get its webhook
+            channel_to_delete = next((channel for channel in channels if channel["channel_id"] == channel_id), None)
+            
+            if channel_to_delete:
+                # Unregister the webhook
+                discord_channel = self.bot.get_channel(channel_id)
+                if discord_channel:
+                    webhooks = await discord_channel.webhooks()
+                    for webhook in webhooks:
+                        if webhook.id == channel_to_delete["webhook"]:
+                            await webhook.delete()
+                            break
+
+                # Remove the channel from the list
+                channels = [channel for channel in channels if channel["channel_id"] != channel_id]
+
+                # If there are still channels left, update the data
+                if channels:
+                    await self.bot.db.guilds_collection.update_one(
+                        {"server_id": guild_id}, {"$set": {"channels": channels}}
+                    )
+                else:
+                    # Otherwise, delete the guild document
+                    await self.bot.db.guilds_collection.delete_one({"server_id": guild_id})
+
+    @commands.hybrid_command(name='testhook', description='Webhook test')
+    async def testWebhook(self, ctx):
+        try:
+            user_name = ctx.author.display_name
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ctx.author.avatar.url) as resp:
+                    avatar_bytes = await resp.read()
+
+            # Create the webhook
+            webhook = await ctx.channel.create_webhook(name=user_name, avatar=avatar_bytes)
+
+            # Create a DiscordWebhook object with the webhook URL
+            webhook_url = webhook.url
+            webhook_obj = DiscordWebhook(url=webhook_url)
+
+            # Create an embed
+            embed = DiscordEmbed(title="Your Title", description="Lorem ipsum dolor sit", color=0x03b2f8)
+            embed.set_timestamp()
+
+            # Add the embed to the webhook
+            webhook_obj.add_embed(embed)
+
+            # Send the webhook
+            # response = "Webhook has been created for this guild"
+            response = webhook_obj.execute()
+
+            # Respond to the user
+            await ctx.send(response)
+        except Exception as e:
+            await ctx.send(f"An error occurred: {e}")
     
     @commands.hybrid_command(name='connect', description='Link to Open World')
     @commands.has_permissions(kick_members=True)
@@ -270,7 +317,7 @@ class OpenWorldServer(commands.Cog):
         async def CreateConnection(lobby, sent_message, guild_name):
             # Create Connection
             # now connect
-            await self.create_guild_document(guild_id, channel_id, guild_name, lobby)
+            await self.create_guild_document(guild_id, channel, guild_name, lobby)
             embed = Embed(
                 description=f':white_check_mark: **LINK START!! You are now connected to {lobby}**',
                 color=0x7289DA 
@@ -368,8 +415,8 @@ class OpenWorldServer(commands.Cog):
         return False
 
     @commands.Cog.listener()
-    async def on_message(self, message):
-        
+    async def on_message(self, message: discord.Message):
+
         if message.content.startswith("a!") or message.author.bot:
             return
 
@@ -399,54 +446,76 @@ class OpenWorldServer(commands.Cog):
         await self.process_message(message,guild_document, channel_id)
 
     
-    async def process_message(self, message, guild_document, channel_id):
+    async def process_message(self, message: discord.Message, guild_document, channel_id):
         # This function determines if where lobby should the message be sent 
         channels = guild_document.get("channels", [])        
         for channel in channels:
-            if channel["channel_id"] == channel_id:    
+            if channel["channel_id"] == channel_id and channel["webhook"]:    
                 await self.send_to_matching_lobbies(message, channel['lobby_name'], channel_id)
+            elif not channel["webhook"]:
+                await message.channel.send("Re-register this channel for webhook registration")
 
-    async def send_to_matching_lobbies(self, message, lobby_name, channel_id):
+    async def send_to_matching_lobbies(self, message: discord.Message, lobby_name, channel_id):
 
         guilds_collection = self.bot.db.guilds_collection
 
-        message_queue = asyncio.Queue()
+        # message_queue = asyncio.Queue()
         async for document in guilds_collection.find():
 
-            guild_id = document.get("server_id")
-            channels = document.get("channels", [])
 
-            for channel in channels:
-                target_channel_id = channel.get("channel_id")
-                target_lobby_name = channel.get("lobby_name")
-                # Checks if its not the guild and the channels via id basically filtered out the current channel
-                if target_channel_id != channel_id and target_lobby_name == lobby_name:
-                    
-                    # gets the guild information and the channel information
-                    guild = self.bot.get_guild(guild_id)
-                    target_channel = guild.get_channel(target_channel_id)
-                    
-                    # if there's a channel registered in the guild
-                    if target_channel:
+                guild_id = document.get("server_id")
+                channels = document.get("channels", [])
+
+                for channel in channels:
+                    target_channel_id = channel.get("channel_id")
+                    target_lobby_name = channel.get("lobby_name")
+                    # Checks if its not the guild and the channels via id basically filtered out the current channel
+                    if target_channel_id != channel_id and target_lobby_name == lobby_name:
                         
-                        if "private" in lobby_name:
-                            emoji = "🔒"  # Lock emoji for private lobbies
-                        else:
-                            emoji = "🌍"  # Earth emoji for public lobbies
+                        webhook_url = channel.get("webhook")
 
-                        content = f"{emoji} **{message.guild.name}**  \n\t\t`{message.author}`: {message.content}\n "
+                        # gets the guild information and the channel information
+                        if webhook_url:
+                            
+                            
 
-                        mentions = self.get_allowed_mentions(message, include_author=False)
-                        attachments = [attachment for attachment in message.attachments]
-                        await message_queue.put((target_channel, content, mentions,attachments))
+                            allowed_mentions = {
+                                "parse" : ["users"]
+                            }
+                            webhook_obj = DiscordWebhook(
+                                url=webhook_url,
+                                avatar_url = message.author.avatar.url,
+                                username =f"{message.author.display_name } || {message.guild.name}",
+                                content= message.content,
+                                allowed_mentions = allowed_mentions
+                                )
+                            
+                            if(message.type == discord.MessageType.reply):
+                                if message.reference:
+                                    replied_message = await message.channel.fetch_message(message.reference.message_id)
 
-        while not message_queue.empty():
-            target_channel, content, mentions, attachments = await message_queue.get()
-            await target_channel.send(content, allowed_mentions=mentions)
-            for attachment in attachments:
-                attachment_task = asyncio.create_task(target_channel.send(content=attachment.url))
-                await attachment_task
-                
+                                    embed = DiscordEmbed(
+                                        title=f"Reply from {message.author.display_name}",
+                                        description=f"<@{replied_message.author.id}> Replying to your message: {replied_message.content}",
+                                        color='03b2f8'  # Blue color (use hex code)
+                                    )
+                                    webhook_obj.add_embed(embed)
+
+                            # Append attachments to the content if there are any
+                            files = []
+                            for attachment in message.attachments:
+                                file = await attachment.to_file()
+                                webhook_obj.add_file(file=file.fp, filename= file.filename)
+
+                            webhook_obj.execute()
+
+        # while not message_queue.empty():
+        #     target_channel, content, mentions, attachments = await message_queue.get()
+        #     await target_channel.send(content, allowed_mentions=mentions)
+        #     for attachment in attachments:
+        #         attachment_task = asyncio.create_task(target_channel.send(content=attachment.url))
+        #         await attachment_task
+        
     async def get_lobby_count(self, lobby_name: str) -> int:
         count = 0
         async for document in self.bot.db.guilds_collection.find():
