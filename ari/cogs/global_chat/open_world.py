@@ -1,4 +1,5 @@
 import json
+import logging
 import discord
 import datetime
 import asyncio
@@ -12,23 +13,27 @@ from typing import Optional
 from discord import AllowedMentions
 from discord.ext import commands
 from discord import Embed
-from plugins.ui import Choice, ConnectDropDown
+
+log = logging.getLogger("openworld.cog")
 
 class OpenWorldServer(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
         self.server_lobbies = None
-
+        self.repositoryInitialize()
     # Caching data
     async def cog_load(self):
-        self.server_lobbies = await self.bot.lobby_repository.findAll()
-        print(self.server_lobbies)
-        self.muted_users = await self.bot.muted_repository.findAll()
-        print(self.muted_users)
-        self.malicious_urls = await self.bot.malicious_urls.findAll()
-        print(self.malicious_urls)
-        self.malicious_words = await self.bot.malicious_words.findAll()
-        print(self.malicious_words)
+        self.server_lobbies = await self.lobby_repository.findAll()
+        log.info("Servers: " + str(self.server_lobbies))
+
+        self.muted_users = await self.muted_repository.findAll()
+        log.info("muted_users: " + str(self.muted_users))
+
+        self.malicious_urls = await self.malicious_urls.findAll()
+        log.info("malicious_urls: " + str(self.malicious_urls))
+
+        self.malicious_words = await self.malicious_words.findAll()
+        log.info("malicious_words: " + str(self.malicious_words))
 
     @commands.command(name="reloaddata")
     async def reload(self,ctx):
@@ -39,6 +44,24 @@ class OpenWorldServer(commands.Cog):
             description=" Data Loaded ",
         ))
 
+    
+    def repositoryInitialize(self):
+        log.info(self.bot.db)
+        self.muted_repository = MutedRepository(self.bot.db)
+        self.lobby_repository = LobbyRepository(self.bot.db)
+        self.malicious_urls = MaliciousURLRepository(self.bot.db)
+        self.malicious_words = MaliciousWordsRepository(self.bot.db)
+
+    @commands.command(name="reloaddata")
+    async def reload(self,ctx):
+        self.gc_cog = self.bot.get_cog("GlobalChatMod")
+        await self.cog_load()
+        await self.gc_cog.cog_load()
+        await ctx.send(embed=Embed(
+            description=" Data Loaded ",
+        ))
+
+    
     def get_limit_server_lobby(self, name):
         for lobby in self.server_lobbies:
             if lobby["lobbyname"] == name:
@@ -718,41 +741,195 @@ class OpenWorldServer(commands.Cog):
                     guilds.append(document)
         return guilds
 
-    
 
-    # @guilds_command.error
-    # async def guilds_command_error(self, ctx, error):
-    #     if isinstance(error, commands.MissingRequiredArgument):
-    #         await self.guilds_command(ctx)    
-    
-    # @commands.command(name='admin_connect', description='Admin command to connect a server and channel')
-    # @commands.has_permissions(administrator=True)
-    # async def admin_connect(self, ctx, server_id: int, channel_id: int, lobby_name: str):
-    #   existing_guild = await self.bot.db.guilds_collection.find_one({"server_id": server_id})
-    #   if existing_guild:
-    #       channels = existing_guild.get("channels", [])
-    #       if any(channel.get("channel_id") == channel_id for channel in channels):
-    #           await ctx.send("This channel is already registered for Open World Chat.")
-    #           return
-
-    #   server = self.bot.get_guild(server_id)
-    #   if not server:
-    #       await ctx.send(":no_entry: Invalid server ID.")
-    #       return
-
-    #   server_name = server.name
-
-    #   if lobby_name not in self.server_lobbies:
-    #       await ctx.send(":no_entry: Lobby name Invalid or Private.")
-    #       return
-
-    #   success = await self.create_guild_document(server_id, channel_id, server_name, lobby_name)
-
-    #   if success:
-    #       await ctx.send(f":white_check_mark: Server with ID {server_id} and channel with ID {channel_id} have been successfully registered for Open World Chat.")
-    #       await ctx.send(f":earth_asia: Selected lobby: {lobby_name}")
-    #   else:
-    #       await ctx.send(":no_entry: Failed to create guild document.")
-    
+        
 async def setup(bot:commands.Bot):
     await bot.add_cog(OpenWorldServer(bot))
+
+
+class MaliciousURLRepository():
+    def __init__(self, db):
+        self.db = db
+        self.collection = self.db.malurl_collection
+
+    async def findAll(self):
+            cursor = self.collection.find()
+            return await cursor.to_list(length=None)
+        
+    async def findOne(self,data):
+        return await self.collection.find_one({"content" : data})
+    
+    async def create(self, data):
+        if await self.findOne(data): 
+            return None
+        await self.collection.insert_one({
+            "content" : data
+        })
+        return {
+            "content" : data
+        }
+    
+    async def delete(self,data):
+        if await self.findOne(data): 
+            return await self.collection.delete_one({
+                "content" : data
+            })
+        else:
+            return None
+
+class MutedRepository():
+    def __init__(self,bot):
+        self.collection = bot.db.guilds_collection
+
+    async def findAll(self):
+        cursor = self.collection.find()
+        return await cursor.to_list(length=None)
+    
+    async def findOne(self,id):
+        return await self.collection.find_one({"id":id})
+    
+    async def create(self, data):
+        return await self.collection.insert_one({
+            "id": data["id"],
+            "name":data["name"],
+            "reason": data["reason"]
+        })
+    
+    async def delete(self,id):
+        return await self.collection.delete_one({
+            "id": id,
+        })
+        
+
+class MaliciousWordsRepository():
+    def __init__(self, db):
+        self.db = db
+        self.collection = self.db.malword_collection
+
+    async def findAll(self):
+        cursor = self.collection.find()
+        return await cursor.to_list(length=None)
+    
+    async def findOne(self,data):
+        return await self.collection.find_one({"content" : data})
+    
+    async def create(self, data):
+        if await self.findOne(data): 
+            return None
+        await self.collection.insert_one({
+            "content" : data
+        })
+        return {
+            "content" : data
+        }
+    
+    async def delete(self,data):
+        if await self.findOne(data): 
+            return await self.collection.delete_one({
+                "content" : data
+            })
+        else:
+            return None
+        
+
+class LobbyDropDown(discord.ui.Select):
+    def __init__(self,server_lobbies,author, on_item_added):
+        self.server_lobbies = server_lobbies
+        self.author = author
+        self.on_item_added = on_item_added
+        
+        options = [discord.SelectOption(label=lobby["lobbyname"], value=lobby["lobbyname"]) for lobby in self.server_lobbies]
+        super().__init__(
+            placeholder="Select a lobby",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+    async def callback(self, interaction):
+        if interaction.user == self.author:
+            await interaction.response.defer()
+            await self.on_item_added(interaction.data['values'][0])
+                 
+class ConnectDropDown(discord.ui.View):
+    def __init__(self, author, server_lobbies):
+        super().__init__()
+        self.lobby = None
+        self.add_item(LobbyDropDown(server_lobbies,author, self.on_item_added))
+
+    async def on_item_added(self,value):
+        self.lobby = value
+        self.stop()
+class Choice(discord.ui.View):
+    def __init__(self, author):
+        super().__init__()
+        self.author = author
+        self.value = None
+
+    @discord.ui.button(label="Yes" , style=discord.ButtonStyle.green)
+    async def btn1(self, interaction: discord.interactions, btn:discord.ui.button):
+        if interaction.user == self.author:
+            self.value = True
+            await interaction.response.defer()
+            self.stop()
+
+    @discord.ui.button(label="Back" , style=discord.ButtonStyle.red)
+    async def btn2(self, interaction: discord.interactions, btn:discord.ui.button):
+        if interaction.user == self.author:
+            self.value = False
+            await interaction.response.defer()
+            self.stop()
+
+class LobbyRepository():
+    def __init__(self,db):
+        self.db = db
+        self.collection =  self.db.lobby_collection
+
+    async def findAll(self):
+        cursor = self.collection.find()
+        return await cursor.to_list(length=None)
+    
+    async def findOne(self,lobbyname):
+        return await self.collection.find_one({"lobbyname":lobbyname})
+    
+    async def create(self, data):
+        if await self.findOne(data["lobbyname"]): 
+            return None
+        await self.collection.insert_one({
+            "lobbyname": data["lobbyname"],
+            "description": data["description"],
+            "limit":data["limit"]
+        })
+        return {
+            "lobbyname": data["lobbyname"],
+            "description": data["description"],
+            "limit":data["limit"]
+        }
+    
+    async def delete(self,data):
+        if await self.findOne(data["lobbyname"]): 
+            return await self.collection.delete_one({
+                "lobbyname": data["lobbyname"],
+            })
+        else:
+            return None
+        
+    
+    async def lobbylimit(self):
+        response  = await self.findAll()
+        if response:
+            hashmap = {}
+            for data in response:
+                hashmap[data["lobbyname"]] = int(data["limit"])
+
+            return hashmap
+        
+
+    async def getAllLobbies(self):
+        response  = await self.findAll()
+        if response:
+            list = []
+            for data in response:
+                list.append(data)
+
+            return list
+        

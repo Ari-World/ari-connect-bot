@@ -44,7 +44,9 @@ class CogManager:
         cogs_specs = []
 
         for importer, modname, ispkg in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
+
             if not ispkg:  # Skip packages, only import modules
+                log.info(modname)
                 try:
                     mod = importlib.import_module(modname)
                     cogs_specs.append(mod.__spec__)

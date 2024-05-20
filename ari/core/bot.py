@@ -7,43 +7,42 @@ import sys
 from typing import *
 import discord
 from discord import Intents
-from plugins import config
+
 from discord.ext import commands
 from discord import app_commands
 
 from .core_commands import Core
 from .dev_commands import Dev
 from ._events import init_events
-from ._global_checks import init_global_checks
 from .cog_manager import CogManager
 
-from plugins.lobby_repository import LobbyRepository
-from plugins.malurl_repository import MaliciousURLRepository
-from plugins.malword_repository import MaliciousWordsRepository
-from plugins.muted_repository import MutedRepository
 from core._cli import ExitCodes
-
+from ._driver._mongo import StaticDatabase
 log = logging.getLogger("ari")
 
 class _NoOwnerSet(RuntimeError):
     """Raised when there is no owner set for the instance that is trying to start."""
 
-# TODO: Handles Data in .env files a.k.a datamanager
-# TODO: Handles Database a.k.a mongodbManager
 # TODO: Global Chat fix with new Structure
 # TODO: Handles Globbal Config and Guild Config
 # TODO: Create cog for webhook / or a module for webhook
+
+
 class Ari(commands.Bot):
     
     def __init__(self, *args, **kwargs):
         self._shutdown_mode = ExitCodes.CRITICAL
         super().__init__(command_prefix= kwargs["prefix"], intents=Intents.all())
         self.synced = False
+        self.db = StaticDatabase
+        self.token = False
         self._uptime = None
         self._cog_mngr = CogManager()
 
-
+    
+        
     async def start(self, token):
+        self.token = token
         await self._pre_login()
         await self.login(token)
         await self.connect()
@@ -52,6 +51,7 @@ class Ari(commands.Bot):
         """
         This should only be run once, prior to logging in to Discord REST API.
         """
+            
         init_events(self)
 
     async def setup_hook(self) -> None:
@@ -77,12 +77,6 @@ class Ari(commands.Bot):
         except RuntimeError as e:
             log.error("Error finding core cogs: %s", e)
 
-    # TODO: Create a MongoDriver mangager
-    def repositoryInitialize(self,db):
-        self.muted_repository = MutedRepository(db)
-        self.lobby_repository = LobbyRepository(db)
-        self.malicious_urls = MaliciousURLRepository(db)
-        self.malicious_words = MaliciousWordsRepository(db)
     
     async def close(self):
         await super().close()

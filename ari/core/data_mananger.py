@@ -17,7 +17,6 @@ def load_basic_configuration():
         It is necessary to call this function BEFORE getting any `Config`
         objects!
     """
-
     load_dotenv()
 
     global basic_config
@@ -25,7 +24,7 @@ def load_basic_configuration():
     discord_api_token = os.getenv('DISCORD_API_TOKEN')
     discord_command_prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
     mongo_db_url = os.getenv('MONGO_DB_URL')
-
+    
     if discord_api_token is None or discord_api_token == '':
         log.error("Environment variable 'DISCORD_API_TOKEN' is required!")
     
@@ -34,6 +33,7 @@ def load_basic_configuration():
         'DISCORD_COMMAND_PREFIX': discord_command_prefix,
         'MONGO_DB_URL': mongo_db_url
     }
+    log.info(basic_config)
 
 def getDiscordToken():
     """ Gets the bot token

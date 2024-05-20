@@ -132,29 +132,6 @@ class GlobalChatMod(commands.Cog):
         self.server_lobbies.append(data)
         await ctx.send(embed=discord.Embed( description=f" Lobby {name} has been newly added"))
     
-    # Doesn't Work
-    # @commands.hybrid_command(name='remove_lobby')
-    # @commands.is_owner()
-    # async def RemoveLobbies(self, ctx, name:str):
-    #     channel = ctx.guild.get_channel(self.controlChannel)
-    #     if ctx.channel.id != self.controlChannel:
-    #         await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-    #         return  
-    #     lobby = await self.bot.lobby_repository.findOne(name)
-    #     print(self.server_lobbies)
-    #     if self.server_lobbies and lobby:
-    #         for x in self.server_lobbies:
-    #             print(x['lobbyname'])
-    #             print(lobby['lobbyname'])
-    #             print(len(x['lobbyname']))
-    #             print(len(lobby['lobbyname']))
-    #             if lobby['lobbyname'].strip() == x['lobbyname'].strip():
-    #                 await self.bot.lobby_repository.delete(lobby['lobbyname'])
-    #                 self.server_lobbies.remove(x)
-    #                 return
-                                
-    #     await ctx.send(embed=discord.Embed( description="Lobby Doesnt Exists"))
-    
     @commands.command(name='add_block_link')
     #@commands.is_owner()
     async def AddblockLinks(self, ctx, content):

@@ -4,7 +4,7 @@ import motor
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from .. import errors
-from ..data_mananger import getDBUrl
+from ..data_mananger import getDBUrl,load_basic_configuration
 
 #  All Collections
 #   #globalmarket = db['globalmarket']
@@ -14,6 +14,18 @@ from ..data_mananger import getDBUrl
 #   malurl_collection = db['malicious_urls']
 #   malword_collection = db['malicious_words']
 log = logging.getLogger("driver.mongo")
+
+load_basic_configuration()
+cluster = AsyncIOMotorClient([getDBUrl()])
+
+class StaticDatabase:
+  db = cluster['AriConnectDB']
+  #globalmarket = db['globalmarket']
+  guilds_collection = db['open_world']
+  muted_collection = db['muted_world_users']
+  lobby_collection = db['lobbies']
+  malurl_collection = db['malicious_urls']
+  malword_collection = db['malicious_words']
 
 
 class MongoDriver:
@@ -44,7 +56,7 @@ class MongoDriver:
         """
         return self._conn.get_database()
 
-    def get_collection(self, category: str) -> "motor.core.Collection":
+    def get_collection(self, collection: str) -> "motor.core.Collection":
         """
         Gets a specified collection within the PyMongo database for this cog.
 
@@ -56,4 +68,4 @@ class MongoDriver:
         :return:
             PyMongo collection object.
         """
-        return self.db[self.cog_name][category]
+        return self.db[collection]
