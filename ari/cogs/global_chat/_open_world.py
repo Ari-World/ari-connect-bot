@@ -605,7 +605,7 @@ class OpenWorldServer(commands.Cog):
                                 webhook_url,
                                 session=session
                             )
-                            allowed_mentions = discord.AllowedMentions(users=True)
+                            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
                             embed = None
                             content= ""
 
