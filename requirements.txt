@@ -3,3 +3,5 @@ discord==2.3.2
 keep_alive==0.0.1
 python-dotenv
 motor==3.4.0
+rich == 13.7.1
+babel == 2.15.0

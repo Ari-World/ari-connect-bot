@@ -10,10 +10,7 @@ class Utility(commands.Cog):
         self.bot = bot
         self.start_time = time.time()
 
-    @commands.hybrid_command(name='ping', description='Show the bot latency')
-    async def ping(self, ctx):
-        embed=discord.Embed(title="Bot Ping", description=f":magic_wand: My ping is {round(self.bot.latency*1000)}ms", color=0xff0000)
-        await ctx.send(embed=embed)
+
 
     @commands.hybrid_command(name='avatar', description='Show the user avatar')
     async def avatar(self, ctx, user:Optional[Union[discord.Member, discord.User]]):
@@ -34,13 +31,13 @@ class Utility(commands.Cog):
     #     except ValueError:
     #         await ctx.send("Invalid guild ID. Please enter a valid integer.")
 
-    @commands.command()
-    async def uptime(self, ctx):
-        uptime_seconds = int(time.time() - self.start_time)
-        uptime_hours, remainder = divmod(uptime_seconds, 3600)
-        uptime_minutes, uptime_seconds = divmod(remainder, 60)
+    # @commands.command()
+    # async def uptime(self, ctx):
+    #     uptime_seconds = int(time.time() - self.start_time)
+    #     uptime_hours, remainder = divmod(uptime_seconds, 3600)
+    #     uptime_minutes, uptime_seconds = divmod(remainder, 60)
 
-        await ctx.send(embed=Embed(description=f"Uptime: {uptime_hours} hours, {uptime_minutes} minutes, {uptime_seconds} seconds", color=0x7289DA ))
+    #     await ctx.send(embed=Embed(description=f"Uptime: {uptime_hours} hours, {uptime_minutes} minutes, {uptime_seconds} seconds", color=0x7289DA ))
 
     @commands.hybrid_command(name="server_list", description="Shows all server list")
     async def server_list(self, ctx):
