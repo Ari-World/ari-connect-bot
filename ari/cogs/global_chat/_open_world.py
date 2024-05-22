@@ -596,75 +596,78 @@ class OpenWorldServer(commands.Cog):
                     # Checks if its not the guild and the channels via id basically filtered out the current channel
                     if target_channel_id != channel_id and target_lobby_name == lobby_name:
 
-                        webhook_url = channel["webhook"]
-                        if webhook_url is None:
-                            continue
+                        try:
+                            webhook_url = channel["webhook"]
+                            if webhook_url is None:
+                                continue
 
-                        webhook = discord.Webhook.from_url(
-                            webhook_url,
-                            session=session
-                        )
-                        allowed_mentions = discord.AllowedMentions(users=True)
-                        embed = None
-                        content= ""
-
-                        if messageType == MessageTypes.SEND:
-
-                            files = []
-                            for attachment in message.attachments:
-                                file = await attachment.to_file()
-                                files.append(file)
-
-                            await webhook.send(
-                                content=  message.content,
-                                username=f"{message.author.display_name} || {message.guild.name}",
-                                avatar_url=message.author.avatar.url,
-                                embed=embed,
-                                allowed_mentions=allowed_mentions,
-                                files=files
+                            webhook = discord.Webhook.from_url(
+                                webhook_url,
+                                session=session
                             )
-                        if messageType == MessageTypes.REPLY:
-                            if message.reference:
-                                replied_message = await message.channel.fetch_message(message.reference.message_id)
+                            allowed_mentions = discord.AllowedMentions(users=True)
+                            embed = None
+                            content= ""
 
-                                embed = discord.Embed(
-                                    title=f"Reply from {message.author.display_name}",
-                                    description=f"<@{replied_message.author.id}> Replying to your message: {replied_message.content}",
-                                    color=0x03b2f8  # Blue color (use hex code)
-                                )
+                            if messageType == MessageTypes.SEND:
+
                                 files = []
                                 for attachment in message.attachments:
                                     file = await attachment.to_file()
                                     files.append(file)
 
                                 await webhook.send(
-                                    content= message.content,
+                                    content=  message.content,
                                     username=f"{message.author.display_name} || {message.guild.name}",
                                     avatar_url=message.author.avatar.url,
                                     embed=embed,
                                     allowed_mentions=allowed_mentions,
                                     files=files
                                 )
+                            if messageType == MessageTypes.REPLY:
+                                if message.reference:
+                                    replied_message = await message.channel.fetch_message(message.reference.message_id)
 
-                        if messageType == MessageTypes.DELETE:
-                            # log.info("deleting message")
-                            # try:
-                            #     content = "_[deleted_message]_"
-                            #     message = await webhook.fetch_message()
-                            #     await webhook.edit_message(
-                            #         message_id= message,
-                            #         content= content,
-                            #         embed=embed,
-                            #         allowed_mentions=allowed_mentions,
+                                    embed = discord.Embed(
+                                        title=f"Reply from {message.author.display_name}",
+                                        description=f"<@{replied_message.author.id}> Replying to your message: {replied_message.content}",
+                                        color=0x03b2f8  # Blue color (use hex code)
+                                    )
+                                    files = []
+                                    for attachment in message.attachments:
+                                        file = await attachment.to_file()
+                                        files.append(file)
 
-                            #     )
-                            # except discord.NotFound:
-                            #     log.error("Message not found")
-                            continue
+                                    await webhook.send(
+                                        content= message.content,
+                                        username=f"{message.author.display_name} || {message.guild.name}",
+                                        avatar_url=message.author.avatar.url,
+                                        embed=embed,
+                                        allowed_mentions=allowed_mentions,
+                                        files=files
+                                    )
 
-                        if messageType == MessageTypes.UPDATE:
+                            if messageType == MessageTypes.DELETE:
+                                # log.info("deleting message")
+                                # try:
+                                #     content = "_[deleted_message]_"
+                                #     message = await webhook.fetch_message()
+                                #     await webhook.edit_message(
+                                #         message_id= message,
+                                #         content= content,
+                                #         embed=embed,
+                                #         allowed_mentions=allowed_mentions,
 
-                            continue
+                                #     )
+                                # except discord.NotFound:
+                                #     log.error("Message not found")
+                                continue
+
+                            if messageType == MessageTypes.UPDATE:
+
+                                continue
+                        except KeyError as e:
+                            log.warning("Webhook doesnt exists"+ e)
 
                         
 
