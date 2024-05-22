@@ -666,8 +666,10 @@ class OpenWorldServer(commands.Cog):
                             if messageType == MessageTypes.UPDATE:
 
                                 continue
-                        except KeyError as e:
-                            log.warning("Webhook doesnt exists"+ e)
+                        except KeyError as k:
+                            log.warning(k)
+                        except Exception as e:
+                            log.warning(e)
 
                         
 
