@@ -8,8 +8,7 @@ import re
 
 import aiohttp
 from discord.ext import commands
-from discord import Embed, Webhook
-from discord_webhook import DiscordEmbed, DiscordWebhook
+from discord import Embed
 
 from enum import Enum
 # All code is moved into one cog due to adding cogs probelem.
