@@ -23,11 +23,6 @@ log = logging.getLogger("ari")
 class _NoOwnerSet(RuntimeError):
     """Raised when there is no owner set for the instance that is trying to start."""
 
-# TODO: Global Chat fix with new Structure
-# TODO: Handles Globbal Config and Guild Config
-# TODO: Create cog for webhook / or a module for webhook
-
-
 class Ari(commands.Bot):
     
     def __init__(self, *args, **kwargs):
@@ -38,8 +33,6 @@ class Ari(commands.Bot):
         self.token = False
         self._uptime = None
         self._cog_mngr = CogManager()
-
-    
         
     async def start(self, token):
         self.token = token
@@ -139,17 +132,6 @@ class Ari(commands.Bot):
   #     else:
   #         log.warning("System channel not found. Unable to send welcome message.")
   #     await target_log.send(embed=discord.Embed(description=f'Bot has been added to a new server {guild.name}'))
-
-  # async def on_command_error(self,ctx, error):
-  #     if isinstance(error, commands.CommandOnCooldown):
-  #         msg = '**Command on cooldown** Retry after **{:.2f}s**'.format(
-  #             error.retry_after)
-  #         await ctx.send(msg)
-  #     elif not isinstance(error, Exception):
-  #         await ctx.send(error)
-  #     else:
-  #       await ctx.send(error)
-
 
       # Add Cogs here
       

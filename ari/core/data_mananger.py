@@ -24,14 +24,17 @@ def load_basic_configuration():
     discord_api_token = os.getenv('DISCORD_API_TOKEN')
     discord_command_prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
     mongo_db_url = os.getenv('MONGO_DB_URL')
+    open_world_thanks_message = os.getenv('OPEN_WORLD_THANKS_MSG')
     
+
     if discord_api_token is None or discord_api_token == '':
         log.error("Environment variable 'DISCORD_API_TOKEN' is required!")
     
     basic_config = {
         'DISCORD_API_TOKEN': discord_api_token,
         'DISCORD_COMMAND_PREFIX': discord_command_prefix,
-        'MONGO_DB_URL': mongo_db_url
+        'MONGO_DB_URL': mongo_db_url,
+        'OPEN_WORLD_THANKS_MSG':open_world_thanks_message
     }
     log.info(basic_config)
 
@@ -73,3 +76,4 @@ def getDBUrl():
         return basic_config['MONGO_DB_URL']
     except KeyError as e:
         raise RuntimeError("Bot basic config has not been loaded yet") from e
+    

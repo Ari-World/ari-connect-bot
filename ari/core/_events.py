@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import sys
-
+from discord.ext import commands
 import discord
 from ._cli import ExitCodes
 
@@ -115,3 +115,15 @@ def init_events(bot):
         if invite_url:
             rich_console.print(f"\nInvite URL: {Text(invite_url, style=f'link {invite_url}')}")
             # We generally shouldn't care if the client supports it or not as Rich deals with it.
+
+    @bot.event
+    async def on_command_error(ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            msg = '**Command on cooldown** Retry after **{:.2f}s**'.format(
+                error.retry_after)
+            await ctx.send(msg)
+        elif not isinstance(error, Exception):
+            await ctx.send(error)
+        else:
+            await ctx.send(error)
+
