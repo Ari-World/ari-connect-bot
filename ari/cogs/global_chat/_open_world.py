@@ -32,7 +32,8 @@ class OpenWorldServer(commands.Cog):
          "> Be respectful and considerate. \n" +
          "> Protect your privacy. \n" +
          "> Follow our community guidelines.\n\n" +
-         "If you see anyone breaking the rules, use ` /report ` and our global mods will take care of it!")
+         "If you see anyone breaking the rules, use ` /report ` and our global mods will take care of it!\n\n"
+         "- Once the message is sent, it cannot delete be deleted from other servers. Please be mindful of what you send")
 
         self.repositoryInitialize()
     # Caching data
