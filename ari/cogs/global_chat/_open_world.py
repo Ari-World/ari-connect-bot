@@ -104,9 +104,7 @@ class OpenWorldServer(commands.Cog):
 
     @commands.command(name="reloaddata")
     async def reload(self,ctx):
-        self.gc_cog = self.bot.get_cog("GlobalChatMod")
         await self.cog_load()
-        await self.gc_cog.cog_load()
         await ctx.send(embed=Embed(
             description=" Data Loaded ",
         ))
@@ -629,7 +627,7 @@ class OpenWorldServer(commands.Cog):
                                     replied_message = await message.channel.fetch_message(message.reference.message_id)
 
                                     embed = discord.Embed(
-                                        title=f"Reply from {message.author.display_name}",
+                                        title=f"Reply from {message.author.display_name} to {message.author.display_name}",
                                         description=f"<@{replied_message.author.id}> Replying to your message: {replied_message.content}",
                                         color=0x03b2f8  # Blue color (use hex code)
                                     )
@@ -1061,7 +1059,7 @@ class OpenWorldServer(commands.Cog):
     async def UnMuteUser(self, ctx, id: int):
         user = await self.bot.fetch_user(id)
         channel = ctx.guild.get_channel(self.controlChannel)
-        exists = await self.bot.muted_repository.findOne(id)
+        exists = await self.muted_repository.findOne(id)
 
         if ctx.channel.id != self.controlChannel:
             await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
