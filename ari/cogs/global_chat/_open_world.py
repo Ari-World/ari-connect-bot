@@ -617,7 +617,7 @@ class OpenWorldServer(commands.Cog):
 
                                 await webhook.send(
                                     content=  message.content,
-                                    username=f"{message.author.display_name} || {message.guild.name}",
+                                    username=f"{message.author.global_name} || {message.guild.name}",
                                     avatar_url=message.author.avatar.url,
                                     embed=embed,
                                     allowed_mentions=allowed_mentions,
@@ -628,8 +628,8 @@ class OpenWorldServer(commands.Cog):
                                     replied_message = await message.channel.fetch_message(message.reference.message_id)
 
                                     embed = discord.Embed(
-                                        title=f"Reply from {message.author.display_name} to {replied_message.author.display_name}",
-                                        description=f"<@{replied_message.author.id}> Replying to your message: {replied_message.content}",
+                                        title=f"Replied to {replied_message.author.global_name}",
+                                        description=f"{replied_message.content}",
                                         color=0x03b2f8  # Blue color (use hex code)
                                     )
                                     files = []
@@ -639,7 +639,7 @@ class OpenWorldServer(commands.Cog):
 
                                     await webhook.send(
                                         content= message.content,
-                                        username=f"{message.author.display_name} || {message.guild.name}",
+                                        username=f"{message.author.global_name} || {message.guild.name}",
                                         avatar_url=message.author.avatar.url,
                                         embed=embed,
                                         allowed_mentions=allowed_mentions,
