@@ -628,7 +628,7 @@ class OpenWorldServer(commands.Cog):
                                     replied_message = await message.channel.fetch_message(message.reference.message_id)
 
                                     embed = discord.Embed(
-                                        title=f"Reply from {message.author.display_name} to {message.author.display_name}",
+                                        title=f"Reply from {message.author.display_name} to {replied_message.author.display_name}",
                                         description=f"<@{replied_message.author.id}> Replying to your message: {replied_message.content}",
                                         color=0x03b2f8  # Blue color (use hex code)
                                     )
