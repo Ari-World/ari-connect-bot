@@ -17,7 +17,7 @@ from ._events import init_events
 from .cog_manager import CogManager
 
 from core._cli import ExitCodes
-from ._driver._mongo import StaticDatabase
+from ._driver._mongo import StaticDatabase, close_db_connection
 log = logging.getLogger("ari")
 
 class _NoOwnerSet(RuntimeError):
@@ -73,6 +73,8 @@ class Ari(commands.Bot):
     
     async def close(self):
         await super().close()
+        await close_db_connection()
+
 
     async def shutdown( self, *,restart: bool = False):
         """Gracefully quit.
@@ -122,17 +124,6 @@ class Ari(commands.Bot):
   #     )
   #     log.info("Ari Toram is Online")
     
-  # async def on_guild_join(self,guild):
-  #     log.info(f'Bot has been added to a new server {guild.name}')
-  #     guildx = self.get_guild(939025934483357766)
-  #     target_log = guildx.get_channel(1230069779071762473)
-  #     target_channel = guild.system_channel  # Use the system channel for the guild
-  #     if target_channel is not None:  # Ensure there's a system channel
-  #         await target_channel.send(f"💖 **Thank you for inviting {self.user.name}!!**\n\n__**A brief intro**__\nHey Everyone! My main purpose is creating an Inter Guild / Server Connectivity to bring the world closer together!\nHope you'll find my application useful! Thankyouuu~\n\nType `a!about` to know more about me and my usage!\n\n**__Servers Connected__**\n{len(self.guilds)}\n\n")
-  #     else:
-  #         log.warning("System channel not found. Unable to send welcome message.")
-  #     await target_log.send(embed=discord.Embed(description=f'Bot has been added to a new server {guild.name}'))
-
       # Add Cogs here
       
   # async def setup_hook(self):

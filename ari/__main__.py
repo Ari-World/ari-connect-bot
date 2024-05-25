@@ -7,7 +7,6 @@ import custom_logging
 from core.bot import Ari
 from core._cli import ExitCodes
 from core import data_mananger
-from core._driver._mongo import MongoDriver as driver
 log = logging.getLogger("ari.main")
 
 #
@@ -70,7 +69,6 @@ async def run_bot(ari : Ari) -> None:
     This runs the bot.
     """
     # Initialize the Database and ready for stuffs
-    await driver.initialize()
 
     custom_logging.init_logging(
         level = 0

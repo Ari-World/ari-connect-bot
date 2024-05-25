@@ -31,7 +31,9 @@ class OpenWorldServer(commands.Cog):
          "**Remember to:** \n" +
          "> Be respectful and considerate. \n" +
          "> Protect your privacy. \n" +
-         "> Follow our community guidelines.\n\n" +
+         "> Follow our community guidelines.\n" +
+         "> No NSFW or Lewd content\n"+
+         "> Keep the chats Family Friendly and Clean\n\n"
          "If you see anyone breaking the rules, use ` /report ` and our global mods will take care of it!\n\n"
          "- Once the message is sent, it cannot delete be deleted from other servers. Please be mindful of what you send")
 
@@ -76,7 +78,11 @@ class OpenWorldServer(commands.Cog):
 
     @commands.command(name="addhooks")
     @commands.is_owner()
-    async def addHooks(self,ctx):
+    async def addHooks(self,ctx :discord.ext.commands):
+        msg = await ctx.send(embed = discord.Embed( description="Checking discord webhooks in channels"))
+        
+        changes = []
+        errors = []
         for guild in self.guild_data:
             for channel in guild["channels"]:
                 try:
@@ -84,7 +90,7 @@ class OpenWorldServer(commands.Cog):
                     if "webhook" not in channel:
                         webhook = await chnlObj.create_webhook(name=guild["server_name"])
                         channel["webhook"] = webhook.url  # Assign webhook URL
-                        await ctx.send(f"Webhook created for channel {chnlObj.name} in guild {guild['server_name']}.")
+                        changes.append(f"{guild["server_name"]} webhook created")
                     elif "webhook" in channel:
                         # Check if the webhook still exists in the channel
                         existing_webhooks = await chnlObj.webhooks()
@@ -93,15 +99,34 @@ class OpenWorldServer(commands.Cog):
                             # Recreate the webhook if it doesn't exist
                             webhook = await chnlObj.create_webhook(name=guild["server_name"])
                             channel["webhook"] = webhook.url  # Assign webhook URL
-                            await ctx.send(f"Webhook recreated for channel {chnlObj.name} in guild {guild['server_name']}.")
+                            changes.append(f"{guild["server_name"]} webhook updated")
                 except Exception as e:
-                    await ctx.send(f"Error occurred while processing guild {guild['server_name']}: {e}")
+                    errors.append(f"{guild['server_name']} : {e}")
 
-        
             await self.guild_repository.update({
                 "server_id": guild["server_id"],
                 "channels": guild["channels"]
             })
+
+        await msg.edit(embed = discord.Embed( description="Writing reports"))
+        message = "Webhooks in all channels of each server has been refreshed"
+        embed = Embed(
+                title = "Report",
+                description= message
+            )
+        if changes:
+            text = ""
+            for data in changes:
+                text += data
+            embed.add_field(name="Report",value=text)
+
+        if errors:
+            text = ""
+            for data in errors:
+                text += data
+            embed.add_field(name="Errors",value=text)
+
+        await msg.edit(embed=embed)
 
     @commands.command(name="reloaddata")
     async def reload(self,ctx):
@@ -606,7 +631,6 @@ class OpenWorldServer(commands.Cog):
                             )
                             allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
                             embed = None
-                            content= ""
 
                             if messageType == MessageTypes.SEND:
 
@@ -626,12 +650,20 @@ class OpenWorldServer(commands.Cog):
                             if messageType == MessageTypes.REPLY:
                                 if message.reference:
                                     replied_message = await message.channel.fetch_message(message.reference.message_id)
-
+                                    name = replied_message.author.name.split(" || ")
                                     embed = discord.Embed(
-                                        title=f"Replied to {replied_message.author.global_name}",
+                                        title=f"Replied to {name[0]}",
                                         description=f"{replied_message.content}",
                                         color=0x03b2f8  # Blue color (use hex code)
                                     )
+                                    replied_files = []
+                                    for attachment in replied_message.attachments:
+                                        file = await attachment.to_file()
+                                        replied_files.append(file)
+
+                                        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+                                            embed.set_image(url=attachment.url)
+
                                     files = []
                                     for attachment in message.attachments:
                                         file = await attachment.to_file()
@@ -932,16 +964,11 @@ class OpenWorldServer(commands.Cog):
 
         return allowed_mentions   
     
-    # TODO: Change this
-    async def getAllLobby(self, current_guild=None):
+    # TODO: Reduce Database usage and use the memory data than database queries
+    async def getAllLobby(self):
         lobby_data = {lobby["lobbyname"]: 0 for lobby in self.server_lobbies}
         
-        if current_guild is not None:
-            filter_query = {"_id": {"$ne": current_guild}}
-        else:
-            filter_query = {}  # Empty filter if current_guild is None
-        
-        for document in await self.guild_repository.findFilter(filter_query):
+        for document in await self.guild_data:
             channels = document["channels"]
             
             for channel in channels:
@@ -957,13 +984,14 @@ class OpenWorldServer(commands.Cog):
     
         return sorted_data
 
-    
+    # TODO: Reduce Database usage and use the memory data than database queries
     async def getLobbyConnections(self,lobby_name,current_guild=None):
         if current_guild is not None:
             filter_query = {"_id": {"$ne": current_guild}, "channels.lobby_name": lobby_name}
         else:
             filter_query = {"channels.lobby_name": lobby_name}  # Filter by lobby_name if current_guild is None
         lobby_connection_count = 0
+        self.guild_data
         async for document in await self.guild_repository.findFilter(filter_query):
             channels = document.get("channels", [])
             
@@ -1003,30 +1031,93 @@ class OpenWorldServer(commands.Cog):
             color=0xFFC0CB
         )
         embed.add_field(name="Global Chat Commands", value=(
-            "`a!reloaddata` - Reloads data incase data doesnt match / registered\n"
-            "`a!listmuted` - Shows all muted users\n"
+            "`a!listmuted` - Shows all muted user globally\n"
+            "`a!listbadwords` - Shows all banned words\n"
+            "`a!listbadurls` - Shows all banned urls\n\n"
+            
             "`a!mute <id> \" reason \"` - Mute user globally\n"
-            "`a!unmute <id>` - Unmute user\n\n"
-            "**Owner Only**\n"
+            "`a!unmute <id>` - Unmute user id\n\n"
+
             "`a!add_lobby \"Lobby Name\"` - Add public global chat\n"
-            "`a!remove_lobby \"Lobby Name\"` - Remove public chat\n"
-            "`a!add_bad_words` \"link\" - Add word to filter\n"
-            "`a!add_block_link` \"word\" - Add word to filter\n"
+            "`a!remove_lobby \"Lobby Name\"` - Remove public chat\n\n"
+            
+            "`a!add_badlink` \"word\" - Add word to filter\n"
+            "`a!remove_links` \"word\" - Remove word to the list\n\n"
+
+
+            "`a!add_badwords` \"word\" - Add word to filter\n"
+            "`a!remove_badwords` \"word\" - Remove word to the list\n\n"
+            
+            "**Deprecated Commands**\n"
+            "`a!reload data`- reload data in the cache (still working)\n"
+            "Reason: Removed because its already automated, beware to reload data unless necessary causes database query overload"
         ), inline=False)
         await ctx.send(embed = embed)
         
     @commands.command(name="listmuted")
     async def getAllMuted(self,ctx):
+        channel = ctx.guild.get_channel(self.controlChannel)
+        
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+        
         format_data = ""
         if self.muted_users:
             x=1
             for data in self.muted_users:
-                text = f"{x}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
+                text = f"{str(x)}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
                 format_data += text + "\n"
                 x += 1
 
         embed = discord.Embed(
             title="Muted List",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    # TODO: Improve Embed
+    @commands.command(name="listbadwords")
+    async def getAllBadwords(self,ctx):
+        channel = ctx.guild.get_channel(self.controlChannel)
+        
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+        
+        format_data = ""
+        if self.malicious_words:
+            x=1
+            for data in self.malicious_words:
+                text = f"{str(x)}) {data["content"]} "
+                format_data += text + "\n"
+                x += 1
+
+        embed = discord.Embed(
+            title="Banned Words",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    # TODO: Improve Embed
+    @commands.command(name="listbadurls")
+    async def getAllBadUrls(self,ctx):
+        channel = ctx.guild.get_channel(self.controlChannel)
+        
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+        
+        format_data = ""
+        if self.malicious_urls:
+            x=1
+            for data in self.malicious_urls:
+                text = f"{str(x)}) {data["content"]} "
+                format_data += text + "\n"
+                x += 1
+
+        embed = discord.Embed(
+            title="Banned Urls",
             description=format_data
         )
         await ctx.send(embed=embed)
@@ -1100,7 +1191,7 @@ class OpenWorldServer(commands.Cog):
         self.server_lobbies.append(data)
         await ctx.send(embed=discord.Embed( description=f" Lobby {name} has been newly added"))
     
-    @commands.command(name='add_block_link')
+    @commands.command(name='add_badlink')
     #@commands.is_owner()
     async def AddblockLinks(self, ctx, content):
         channel = ctx.guild.get_channel(self.controlChannel)
@@ -1112,8 +1203,24 @@ class OpenWorldServer(commands.Cog):
         await ctx.send(embed = discord.Embed(
             description= f"Content has been added to list"
         ))
-    
-    @commands.command(name='add_bad_words')
+    @commands.command(name='remove_links')
+    async def RemoveBlockLinks(self, ctx, content):
+        channel = ctx.guild.get_channel(self.controlChannel)
+       
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+
+        exists = await self.malicious_urls_repository.findOne(content)
+ 
+        if exists:
+            await self.muted_repository.delete(exists["content"])
+            self.malicious_urls.remove(exists)
+            await ctx.send(embed=discord.Embed( description=f" {exists["content"]} has been removed to the list"))
+        else:    
+            await ctx.send(embed=discord.Embed( description=f"{content}not found in the list"))
+
+    @commands.command(name='add_badwords')
     #@commands.is_owner()
     async def Addblockwords(self,ctx, content):
         channel = ctx.guild.get_channel(self.controlChannel)
@@ -1125,6 +1232,24 @@ class OpenWorldServer(commands.Cog):
         await ctx.send(embed = discord.Embed(
             description= f"Content has been added to list"
         ))
+    
+    @commands.command(name='remove_badwords')
+    async def RemoveBlockWorlds(self, ctx, content):
+        channel = ctx.guild.get_channel(self.controlChannel)
+
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+        
+        exists = await self.malicious_words_repository.findOne(content)
+ 
+        if exists:
+            await self.muted_repository.delete(exists["content"])
+            self.malicious_words.remove(exists)
+            await ctx.send(embed=discord.Embed( description=f" {exists["content"]} has been removed to the list"))
+        else:    
+            await ctx.send(embed=discord.Embed( description=f"{content}not found in the list"))
+          
 
     async def log_report(self,name,reportedBy,reason, attachments):
         guild = self.bot.get_guild(939025934483357766)
@@ -1183,7 +1308,7 @@ class MaliciousURLRepository():
 
 class MutedRepository():
     def __init__(self,bot):
-        self.collection = bot.db.guilds_collection
+        self.collection = bot.db.muted_collection
 
     async def findAll(self):
         cursor = self.collection.find()
@@ -1228,12 +1353,9 @@ class MaliciousWordsRepository():
         }
     
     async def delete(self,data):
-        if await self.findOne(data): 
-            return await self.collection.delete_one({
-                "content" : data
-            })
-        else:
-            return None
+        return await self.collection.delete_one({
+            "content" : data
+        })
         
 
 class LobbyDropDown(discord.ui.Select):
