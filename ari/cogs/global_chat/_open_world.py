@@ -8,7 +8,7 @@ import re
 
 import aiohttp
 from discord.ext import commands
-from discord import Embed
+from discord import ButtonStyle, Embed, Webhook
 
 from enum import Enum
 
@@ -28,7 +28,7 @@ class OpenWorldServer(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
         self.server_lobbies = None
-        self.deleteMessageThreshold = 10
+        self.deleteMessageThreshold = 180
         self.controlChannel = 1230160106369318965
         self.cacheMessages = []
 
@@ -472,6 +472,44 @@ class OpenWorldServer(commands.Cog):
     async def send_to_matching_lobbies(self, message: discord.Message, lobby_name, channel_id, messageType: MessageTypes, updateMessage :discord.Message = None):
         # Prepare messagesData
         messagesData = {"source": message.id, "webhooksent": []}
+        embed = None
+        source_data = None
+        if message.reference and messageType == MessageTypes.REPLY:
+            replied_message = await message.channel.fetch_message(message.reference.message_id)
+            name = replied_message.author.name.split(" || ")
+            embed = discord.Embed(
+                title=f"Replied to {name[0]}",
+                description=f"{replied_message.content}",
+                color=0x03b2f8  # Blue color (use hex code)
+            )
+            
+            for attachment in replied_message.attachments:
+                if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+                    embed.set_image(url=attachment.url)
+
+            for data in self.cacheMessages:
+                if data["lobbyname"] == lobby_name:
+                    for messages in data["messages"]:
+                        #  Checks incase its in the same server
+                        if messages["source"] == message.reference.message_id:
+                            log.info("This source data is coming from the source")
+                            source_data = messages
+                            break
+                        #   Checks if its a reply to other server
+                        for webhook in messages["webhooksent"]:
+                            if webhook["messageId"] == message.reference.message_id:
+                                log.info("This source data is coming from the webhooksent")
+                                source_data = messages
+                                break
+            
+            if source_data:
+                combined_ids = []
+                combined_ids.append(source_data["source"])
+                for data in source_data["webhooksent"]:
+                    if data["messageId"] != message.reference.message_id:
+                        combined_ids.append(data["messageId"])
+            log.info(source_data)
+            log.info(combined_ids)
         async with aiohttp.ClientSession() as session:
             tasks = []
 
@@ -482,105 +520,118 @@ class OpenWorldServer(commands.Cog):
                     target_lobby_name = channel["lobby_name"]
                     # Checks if its not the guild and the channels via id basically filtered out the current channel
                     if target_channel_id != channel_id and target_lobby_name == lobby_name:
-                        tasks.append(self.process_channel(session, channel, message, messageType, messagesData))
-
+                        if messageType == MessageTypes.SEND:
+                            tasks.append(self.process_send_message(channel["webhook"], session,  message, messagesData))
+                        elif messageType == MessageTypes.REPLY and source_data:
+                            tasks.append(self.process_reply_message(channel["webhook"], session, embed, message, messagesData, combined_ids,target_channel_id))
             await asyncio.gather(*tasks)
-
             # Append messagesData to each entry's messages list in self.cacheMessages
             for data in self.cacheMessages:
                 if data["lobbyname"] == lobby_name:
                     data["messages"].append(messagesData)
-                    print(messagesData)
                     await self.schedule_delete_cache_message(messagesData["source"], lobby_name)
 
-
-    async def process_channel(self,session, channel, message, messageType, messagesData):
+    async def process_send_message(self, webhook_url, session, message : discord.Message, messagesData):
         try:
-            webhook_url = channel["webhook"]
-            if webhook_url is None:
-                return
+            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
 
             webhook = discord.Webhook.from_url(
                 webhook_url,
                 session=session
             )
-            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
-            embed = None
 
-            if messageType == MessageTypes.SEND:
+            files = []
+            for attachment in message.attachments:
+                file = await attachment.to_file()
+                files.append(file)
 
-                files = []
-                for attachment in message.attachments:
-                    file = await attachment.to_file()
-                    files.append(file)
-
-                wmsg : discord.WebhookMessage  = await webhook.send(
-                    content=  message.content,
-                    username=f"{message.author.global_name} || {message.guild.name}",
-                    avatar_url=message.author.avatar.url,
-                    embed=embed,
-                    allowed_mentions=allowed_mentions,
-                    files=files,
-                    wait=True
-                )
-
-                messagesData["webhooksent"].append({ "messageId" : wmsg.id})
-
-            if messageType == MessageTypes.REPLY:
-                if message.reference:
-                    replied_message = await message.channel.fetch_message(message.reference.message_id)
-                    name = replied_message.author.name.split(" || ")
-                    embed = discord.Embed(
-                        title=f"Replied to {name[0]}",
-                        description=f"{replied_message.content}",
-                        color=0x03b2f8  # Blue color (use hex code)
-                    )
-                    replied_files = []
-                    for attachment in replied_message.attachments:
-                        file = await attachment.to_file()
-                        replied_files.append(file)
-
-                        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-                            embed.set_image(url=attachment.url)
-
-                    files = []
-                    for attachment in message.attachments:
-                        file = await attachment.to_file()
-                        files.append(file)
-
-                    wmsg : discord.WebhookMessage = await webhook.send(
-                        content= message.content,
-                        username=f"{message.author.global_name} || {message.guild.name}",
-                        avatar_url=message.author.avatar.url,
-                        embed=embed,
-                        allowed_mentions=allowed_mentions,
-                        files=files
-                    )
-
-                    messagesData["webhooksent"].append({ "messageId" : wmsg.id})
-
-            if messageType == MessageTypes.DELETE:
-                # log.info("deleting message")
-                # try:
-                #     content = "_[deleted_message]_"
-                #     message = await webhook.fetch_message()
-                #     await webhook.edit_message(
-                #         message_id= message,
-                #         content= content,
-                #         embed=embed,
-                #         allowed_mentions=allowed_mentions,
-
-                #     )
-                # except discord.NotFound:
-                #     log.error("Message not found")
-                
-                pass
-            if messageType == MessageTypes.UPDATE:
-                pass  
+            wmsg : discord.WebhookMessage  = await webhook.send(
+                content=  message.content,
+                username=f"{message.author.global_name} || {message.guild.name}",
+                avatar_url=message.author.avatar.url,
+                allowed_mentions=allowed_mentions,
+                files=files,
+                wait=True
+            )
+            messagesData["webhooksent"].append({ "messageId" : wmsg.id})
         except KeyError as k:
             log.warning(k)
         except Exception as e:
             log.warning(e)
+
+    async def process_reply_message(self, webhook_url, session, embed, message: discord.Message, messagesData, combined_ids, target_channel_id):
+
+        match = re.match(r'https://discord.com/api/webhooks/(\d+)/(.+)', webhook_url)
+        if not match:
+            raise ValueError("Invalid webhook URL format")
+        webhook_id, webhook_token = match.groups()
+        
+        webhook: Webhook = Webhook.partial(id=int(webhook_id), token=webhook_token, session=session, client=self.bot)
+        tasks = []
+        fetched_replied_messages = []
+        for data_id in combined_ids:
+            try:
+                replied_message = await webhook.fetch_message(data_id)
+                if replied_message:
+                    fetched_replied_messages.append(replied_message)
+
+                    break
+            except discord.NotFound:
+                try:
+                    channel = self.bot.get_channel(target_channel_id)
+                    if channel:
+                        replied_message = await channel.fetch_message(data_id)
+                        if replied_message:
+                            fetched_replied_messages.append(replied_message)
+                            break
+                except discord.NotFound:
+                    continue
+        if len(fetched_replied_messages) == len(combined_ids):
+            for data in fetched_replied_messages:
+                tasks.append(self.process_reply_message_final(replied_message, message, embed, webhook, messagesData))
+        
+            await asyncio.gather(*tasks)
+    
+         
+            
+    async def process_reply_message_final(self, replied_message ,message,embed, webhook, messagesData):
+        try:    
+            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
+
+            button = discord.ui.Button(
+                label="Jump to message",
+                style=discord.ButtonStyle.link,
+                url=replied_message.jump_url
+            )
+            view = discord.ui.View()
+            view.add_item(button)
+            # Prepare attachments
+            files = []
+            for attachment in message.attachments:
+                file = await attachment.to_file()
+                files.append(file)
+
+            # Send the message via webhook
+            wmsg: discord.WebhookMessage = await webhook.send(
+                content=message.content,
+                username=f"{message.author.global_name} || {message.guild.name}",
+                avatar_url=message.author.avatar.url,
+                embed=embed,
+                allowed_mentions=allowed_mentions,
+                files=files,
+                view=view,
+                wait=True
+            )                
+            
+            # Add the sent message ID to messagesData
+            messagesData["webhooksent"].append({"messageId": wmsg.id})
+        
+        except KeyError as k:
+            log.warning(f"KeyError: {k}")
+        except Exception as e:
+            log.error(f"Unexpected error: {e}")
+              
+        
     async def get_lobby_count(self, lobby_name: str) -> int:
         count = 0
         async for document in self.bot.db.guilds_collection.find():
