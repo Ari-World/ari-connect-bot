@@ -128,13 +128,13 @@ def init_events(bot):
             await ctx.send(error)
 
     @bot.event
-    async def on_guild_join(guild):
+    async def on_guild_join(guild : discord.Guild):
         channel = guild.text_channels[0]
         embed = discord.Embed(
             title=guild.name, 
             description=f"💖 **Thank you for inviting {bot.user.name}!!**\n\n__**A brief intro**__\nHey Everyone! My main purpose is creating an Inter Guild / Server Connectivity to bring the world closer together!\nHope you'll find my application useful! Thankyouuu~\n\nType `a!about` to know more about me and my usage!\n\n**__Servers Connected__**\n{len(bot.guilds)}\n\n")
         await channel.send(embed=embed)
-        log.info(f'Bot has been added to a new server {guild.name}')
+        log.info(f'Bot has been added to a new server {guild.name}\n\n Added by {guild.owner.global_name } ({guild.owner.name})')
         guildx = bot.get_guild(939025934483357766)
         target_log = guildx.get_channel(1230069779071762473)
         # target_channel = guild.system_channel  # Use the system channel for the guild

@@ -516,13 +516,13 @@ class OpenWorldServer(commands.Cog):
         if self.malicious_urls and self.malicious_words:
             for url in self.malicious_urls:
                 if re.search(url['content'],content, re.IGNORECASE):
-                    return True
+                    return True ,url['content']
                 
             for word in self.malicious_words:
                 if word['content'].lower() in content.lower():
-                    return True
+                    return True, word['content']
             
-        return False
+        return False, None
 
     @commands.Cog.listener()
     async def on_message_delete(self, message:discord.Message):
@@ -586,9 +586,12 @@ class OpenWorldServer(commands.Cog):
             await sender.send(embed=Embed(description=f"You have been muted for {muted["reason"]}"))
             return
         # Checks if the message is harmfulll
-        if self.contains_malicious_url(message.content):
+        status, word = self.contains_malicious_url(message.content)
+        if status:
             await message.delete()
-            await message.author.send(embed = Embed( description= "Your message contains malicious content. Please refrain from using inappropriate language or sharing harmful links."))    
+            await message.author.send(embed = Embed( description= "Your message contains malicious content."
+                                                    "Please refrain from using inappropriate language or sharing harmful links.\n\n"
+                                                    f" Word: {word}"))    
             await self.log_report(message, "Sending Malicious Content")
             return
         
@@ -968,7 +971,7 @@ class OpenWorldServer(commands.Cog):
     async def getAllLobby(self):
         lobby_data = {lobby["lobbyname"]: 0 for lobby in self.server_lobbies}
         
-        for document in await self.guild_data:
+        for document in self.guild_data:
             channels = document["channels"]
             
             for channel in channels:
@@ -1018,7 +1021,7 @@ class OpenWorldServer(commands.Cog):
             await ctx.send(embed=discord.Embed(description=f"Please provide a picture"))
 
         await ctx.send(embed=discord.Embed(description=f"User has been reported"))
-        await self.log_report(username,ctx.author.name,reason,attacment)
+        await self.log_report_by_user(username,ctx.author.name,reason,attacment)
 
     @commands.command(name="moderation")
     #@commands.has_role("@Ari Global Mod")
@@ -1251,13 +1254,14 @@ class OpenWorldServer(commands.Cog):
             await ctx.send(embed=discord.Embed( description=f"{content}not found in the list"))
           
 
-    async def log_report(self,name,reportedBy,reason, attachments):
+    async def log_report_by_user(self,name,reportedBy, reason, attachments):
         guild = self.bot.get_guild(939025934483357766)
         target_channel = guild.get_channel(975254983559766086)
 
         embed = discord.Embed(
             title="Reported",
-            description= f"**User {name} has reported by {reportedBy}**"
+            description= (f"**User {name} has reported**\n"
+                          f"Reason: {reason}")
         )
         embed.set_footer(text = f"reported by {reportedBy}")
         
