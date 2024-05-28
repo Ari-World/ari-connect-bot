@@ -17,7 +17,7 @@ from ._events import init_events
 from .cog_manager import CogManager
 
 from core._cli import ExitCodes
-from ._driver._mongo import StaticDatabase, close_db_connection
+from ._driver._mongo import StaticDatabase
 log = logging.getLogger("ari")
 
 class _NoOwnerSet(RuntimeError):
@@ -73,7 +73,7 @@ class Ari(commands.Bot):
     
     async def close(self):
         await super().close()
-        await close_db_connection()
+        await self.db.close_db_connection()
 
 
     async def shutdown( self, *,restart: bool = False):

@@ -1,16 +1,18 @@
 
 import logging
+import signal
 import discord
-
 import asyncio
 
 import re
 
 import aiohttp
 from discord.ext import commands
-from discord import Embed
+from discord import ButtonStyle, Embed, Webhook
 
 from enum import Enum
+
+import schedule
 # All code is moved into one cog due to adding cogs probelem.
 # Issue is posted in  github
 
@@ -26,7 +28,10 @@ class OpenWorldServer(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
         self.server_lobbies = None
+        self.deleteMessageThreshold = 180
         self.controlChannel = 1230160106369318965
+        self.cacheMessages = []
+
         self.openworldThanksMessage = ("Thanks for connecting to the Open World Server! \n\n"+
          "**Remember to:** \n" +
          "> Be respectful and considerate. \n" +
@@ -51,22 +56,47 @@ class OpenWorldServer(commands.Cog):
         self.malicious_words = await self.malicious_words_repository.findAll()
         
         self.initializeActivity()
-        
+    
+    # Leading Scheduler for message
     def initializeActivity(self):
         """
         Initialize the activity field for each guild in self.guild_data.
         """
-        for guild in self.guild_data:
-            for channel in guild["channels"]:
-                channel["activity"] = False 
-
-    # Timer for each channels
-    async def activityWatcher(self, data):
+        log.info("Creating Cache data for message caching system")
+        self.generateLobbySchedulerData()
+   
+    def delete_cache_message(self, source_id,lobbyName):
+        for message in self.cacheMessages:
+            if message["lobbyname"] == lobbyName:
+                for source in message["messages"]:
+                    if source["source"] == source_id:
+                        message["messages"].remove(source)
+                        return 
+                    
+    async def schedule_delete_cache_message(self, source_id, lobby_name):
         
-         while True:
-            
-            await asyncio.sleep(600)  # Wait for 10 minutes (600 seconds)
-            data["channels"]["activity"] = False
+        await asyncio.sleep(self.deleteMessageThreshold)
+
+        self.delete_cache_message(source_id, lobby_name)
+        log.info(f"Deleted message with source ID {source_id} from lobby {lobby_name} after {self.deleteMessageThreshold} seconds")
+
+
+    def generateLobbySchedulerData(self):
+        for lobby in self.server_lobbies:
+            data =  {
+                "lobbyname": lobby["lobbyname"],
+                "messages": []
+            }
+            self.cacheMessages.append(data)
+
+    def signal_handler(self, sig, frame):
+        log.info('Received SIGINT, stopping scheduler...')
+        self.stop()
+        raise KeyboardInterrupt
+
+    def stop(self):
+        self.stop_scheduler = True
+        schedule.clear()
 
     
     def repositoryInitialize(self):
@@ -76,6 +106,9 @@ class OpenWorldServer(commands.Cog):
         self.malicious_urls_repository = MaliciousURLRepository(self.bot.db)
         self.malicious_words_repository = MaliciousWordsRepository(self.bot.db)
 
+    # ======================================================================================
+    # Bot Commands
+    # ======================================================================================
     @commands.command(name="addhooks")
     @commands.is_owner()
     async def addHooks(self,ctx :discord.ext.commands):
@@ -134,177 +167,7 @@ class OpenWorldServer(commands.Cog):
         await ctx.send(embed=Embed(
             description=" Data Loaded ",
         ))
-
-    
-    def get_limit_server_lobby(self, name):
-        for lobby in self.server_lobbies:
-            if lobby["lobbyname"] == name:
-                return lobby["limit"]
-            
-    def isUserBlackListed(self,id):
-        if self.muted_users:
-            for user in self.muted_users:
-                if user["id"] == id:
-                    return user
-        return None
-    
-    # TODO: Pre-cache the data of all the guild
-    def find_guild(self, guild_id: int, channel_id: int, tag: str = None):
-        """
-        Find a guild in the cached guild data by guild_id and channel_id.
-        
-        Args:
-            guild_id (int): The ID of the guild to find.
-            channel_id (int): The ID of the channel to find within the guild.
-        
-        Returns:
-            dict or None: The guild data if found, otherwise None.
-        """
-        for guild in self.guild_data:  
-            if guild["server_id"] == guild_id:  
-                channels = guild.get("channels", [])
-                for channel in channels: 
-                    if channel["channel_id"] == channel_id:
-                        return guild  
-        return None  
-            
-    async def create_guild_document(self, guild_id, channel : discord.TextChannel, server_name, lobby_name):
-        """
-        Create or update a guild document in the database and cache.
-        
-        Args:
-            guild_id (int): The ID of the guild.
-            channel (discord.TextChannel): The Discord text channel object.
-            server_name (str): The name of the server.
-            lobby_name (str): The name of the lobby.
-        
-        Returns:
-            bool: True if the operation is successful, False otherwise.
-        """
-
-        channel_id = channel.id  
-        guild_document = None
-        for guild in self.guild_data:  
-            if guild["server_id"] == guild_id:  
-                guild_document = guild
-        
-        webhook = await channel.create_webhook(name=server_name)
-        if guild_document:
-
-            channels = guild_document["channels"]  # Get the channels of the guild
-            if any(ch["channel_id"] == channel_id for ch in channels):  # Check if the channel already exists
-                return False  # Return False if the channel already exists
-
-            channels.append({"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url, "activity": False})  # Add the new channel
-            update_successful = await self.guild_repository.update({
-                "server_id": guild_id,
-                "channels": channels
-            })
-           
-            if update_successful:
-                for guild in self.guild_data:
-                    if guild["server_id"] == guild_id:
-                        guild["channels"] = channels
-                        for channel in guild["channels"]:
-                            if "activity" not in channel:
-                                channel["activity"] = False
-
-
-
-        else:
-            insertion_successful = await self.guild_repository.create({
-                "server_id": guild_id,
-                "server_name": server_name,
-                "channels": [{"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url, "activity": False}]
-            })
-
-            if insertion_successful:
-                # Add the new guild to the cache only if the database insertion was successful
-                self.guild_data.append({
-                    "server_id": guild_id,
-                    "server_name": server_name,
-                    "channels": [{"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url, "activity": False}],
-                })
-
-        return True
-
-    async def update_guild_lobby(self, guild_id: int, channel_id: int, lobby_name: str):
-        guild_document = None
-        for guild in self.guild_data:  
-            if guild["server_id"] == guild_id:  
-                guild_document = guild
-        if guild_document:
-            channels = guild_document["channels"] 
-
-            # Get's all the channel and change the lobby name then break
-            for channel in channels:
-                if channel["channel_id"] == channel_id:
-                    channel["lobby_name"] = lobby_name
-                    break
-            update_successful = await self.guild_repository.update({
-                "server_id": guild_id,
-                "channels": channels
-            })
-           
-            if update_successful:
-                for guild in self.guild_data:
-                    if guild["server_id"] == guild_id:
-                        guild["channels"] = channels
-                        for channel in guild["channels"]:
-                            if "activity" not in channel:
-                                channel["activity"] = False
-
-
-                        
-            
-    async def delete_guild_document(self, guild_id: int, channel_id: int):
-       
-        guild_document = None
-        for guild in self.guild_data:  
-            if guild["server_id"] == guild_id:  
-                guild_document = guild
-        # If data exists
-        if guild_document:
-            # Get all channels within the guild
-            channels = guild_document["channels"]
-
-            # Find the channel to delete and get its webhook
-            channel_to_delete = next((channel for channel in channels if channel["channel_id"] == channel_id), None)
-            
-            if channel_to_delete:
-                # Unregister the webhook
-                discord_channel = self.bot.get_channel(channel_id)
-                if discord_channel:
-                    webhooks = await discord_channel.webhooks()
-                    for webhook in webhooks:
-                        if webhook.id == channel_to_delete["webhook"]:
-                            await webhook.delete()
-                            break
-
-                # Remove the channel from the list
-                channels = [channel for channel in channels if channel["channel_id"] != channel_id]
-
-                # If there are still channels left, update the data
-                if channels:
-                    update_successful = await self.guild_repository.update({
-                        "server_id": guild_id,
-                        "channels": channels
-                    })
-                
-                    if update_successful:
-                        for guild in self.guild_data:
-                            if guild["server_id"] == guild_id:
-                                guild["channels"] = channels
-                                for channel in guild["channels"]:
-                                    if "activity" not in channel:
-                                        channel["activity"] = False
-
-                else:
-                    # Otherwise, delete the guild document
-                    result = await self.bot.db.guilds_collection.delete_one({"server_id": guild_id})
-                    if result:
-                        self.guild_data = [guild for guild in self.guild_data if guild["server_id"] != guild_id]
-        
+             
     @commands.hybrid_command(name='connect', description='Link to Open World')
     @commands.has_permissions(kick_members=True)
     async def openworldlink(self, ctx, channel: discord.TextChannel):
@@ -484,9 +347,7 @@ class OpenWorldServer(commands.Cog):
 
         # Sequence 
         await Sequence(guild_id, channel_id, guild_name)
-        
 
-    
     @commands.hybrid_command(name='unlink', description='Unlink from Open World')
     @commands.has_permissions(kick_members=True)
     async def openworldunlink(self, ctx):
@@ -526,7 +387,9 @@ class OpenWorldServer(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message_delete(self, message:discord.Message):
-        
+        if message.author.bot:  # Check if the author of the deleted message is the bot
+            return
+
         guild_id = message.guild.id
         channel_id = message.channel.id
         
@@ -536,11 +399,13 @@ class OpenWorldServer(commands.Cog):
         if not guild_document:
             return
         
-
-        await self.process_message(message, guild_document, channel_id, MessageTypes.DELETE)
+        await self.validate_webhook_channel(message, guild_document, channel_id, MessageTypes.DELETE)
 
     @commands.Cog.listener()
     async def on_message_edit(self,before, after):
+        if before.author.bot:
+            return
+        
 
         guild_id = before.guild.id
         channel_id = before.channel.id
@@ -551,15 +416,8 @@ class OpenWorldServer(commands.Cog):
         if not guild_document:
             return
 
-        # channel = before.channel
-        # author = before.author
-        # before_content = before.content
-        # after_content = after.content
         
-        # print(f'Message edited in {channel} by {author}:')
-        # print(f'Before: {before_content}')
-        # print(f'After: {after_content}')
-        # await self.process_message(before, guild_document, channel_id, MessageTypes.UPDATE, after)
+        await self.validate_webhook_channel(after, guild_document, channel_id, MessageTypes.UPDATE)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -578,7 +436,7 @@ class OpenWorldServer(commands.Cog):
             return
         
         sender = self.bot.get_user(message.author.id)
-        
+        #  TODO: Improve Security
         muted = self.isUserBlackListed( message.author.id)
         # Checks if the user is blacklisted
         if muted:
@@ -601,120 +459,221 @@ class OpenWorldServer(commands.Cog):
             messageType = MessageTypes.SEND
         # All checks done, Process the message
 
-        await self.process_message(message, guild_document, channel_id, messageType)
+        await self.validate_webhook_channel(message, guild_document, channel_id, messageType)
 
-    async def process_message(self, message: discord.Message, guild_document, channel_id, messageType: MessageTypes, updateMessage = None):
+    async def validate_webhook_channel(self, message: discord.Message, guild_document, channel_id, messageType: MessageTypes):
         # This function determines if where lobby should the message be sent     
         for channel in guild_document["channels"]:
             if channel["channel_id"] == channel_id and channel["webhook"]:    
-                await self.send_to_matching_lobbies(message, channel['lobby_name'], channel_id, messageType,updateMessage)
+                await self.send_to_matching_lobbies(message, channel['lobby_name'], channel_id, messageType)
             elif not channel["webhook"]:
                 await message.channel.send("Re-register this channel for webhook registration")
 
-    async def send_to_matching_lobbies(self, message: discord.Message, lobby_name, channel_id, messageType: MessageTypes, updateMessage :discord.Message = None):
-        # All guild in the collection
+    async def send_to_matching_lobbies(self, message: discord.Message, lobby_name, channel_id, messageType: MessageTypes ):
+        # Prepare messagesData
+        if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
+            messagesData = {"source": message.id, "channel": message.channel.id,"webhooksent": []}
+            embed = None
+            source_data = None
+
+            if message.reference and messageType == MessageTypes.REPLY:
+                embed = await self.prepare_reply_embed(message, lobby_name)
+
+        if messageType == MessageTypes.DELETE or messageType == MessageTypes.UPDATE:
+            source_data = self.find_source_data(message.id, lobby_name)
+
+            combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"]}]
+            combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
+        
         async with aiohttp.ClientSession() as session:
+            tasks = []
+
             for document in self.guild_data:
                 channels = document["channels"]
-
                 for channel in channels:
-                    target_channel_id = channel["channel_id"]
-                    target_lobby_name = channel["lobby_name"]
                     # Checks if its not the guild and the channels via id basically filtered out the current channel
-                    if target_channel_id != channel_id and target_lobby_name == lobby_name:
-
-                        try:
-                            webhook_url = channel["webhook"]
-                            if webhook_url is None:
-                                continue
-
-                            webhook = discord.Webhook.from_url(
-                                webhook_url,
-                                session=session
-                            )
-                            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
-                            embed = None
-
-                            if messageType == MessageTypes.SEND:
-
-                                files = []
-                                for attachment in message.attachments:
-                                    file = await attachment.to_file()
-                                    files.append(file)
-
-                                await webhook.send(
-                                    content=  message.content,
-                                    username=f"{message.author.global_name} || {message.guild.name}",
-                                    avatar_url=message.author.avatar.url,
-                                    embed=embed,
-                                    allowed_mentions=allowed_mentions,
-                                    files=files
-                                )
-                            if messageType == MessageTypes.REPLY:
-                                if message.reference:
-                                    replied_message = await message.channel.fetch_message(message.reference.message_id)
-                                    name = replied_message.author.name.split(" || ")
-                                    embed = discord.Embed(
-                                        title=f"Replied to {name[0]}",
-                                        description=f"{replied_message.content}",
-                                        color=0x03b2f8  # Blue color (use hex code)
-                                    )
-                                    replied_files = []
-                                    for attachment in replied_message.attachments:
-                                        file = await attachment.to_file()
-                                        replied_files.append(file)
-
-                                        if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-                                            embed.set_image(url=attachment.url)
-
-                                    files = []
-                                    for attachment in message.attachments:
-                                        file = await attachment.to_file()
-                                        files.append(file)
-
-                                    await webhook.send(
-                                        content= message.content,
-                                        username=f"{message.author.global_name} || {message.guild.name}",
-                                        avatar_url=message.author.avatar.url,
-                                        embed=embed,
-                                        allowed_mentions=allowed_mentions,
-                                        files=files
-                                    )
-
-                            if messageType == MessageTypes.DELETE:
-                                # log.info("deleting message")
-                                # try:
-                                #     content = "_[deleted_message]_"
-                                #     message = await webhook.fetch_message()
-                                #     await webhook.edit_message(
-                                #         message_id= message,
-                                #         content= content,
-                                #         embed=embed,
-                                #         allowed_mentions=allowed_mentions,
-
-                                #     )
-                                # except discord.NotFound:
-                                #     log.error("Message not found")
-                                continue
-
-                            if messageType == MessageTypes.UPDATE:
-
-                                continue
-                        except KeyError as k:
-                            log.warning(k)
-                        except Exception as e:
-                            log.warning(e)
-
+                    if channel["channel_id"] != channel_id and channel["lobby_name"] == lobby_name:
                         
+                        # webhook = self.create_webhook(channel["webhook"], session, messageType)
+                        webhook  = Webhook.from_url(channel["webhook"], session=session)
 
-                      
-        # while not message_queue.empty():
-        #     target_channel, content, mentions, attachments = await message_queue.get()
-        #     await target_channel.send(content, allowed_mentions=mentions)
-        #     for attachment in attachments:
-        #         attachment_task = asyncio.create_task(target_channel.send(content=attachment.url))
-        #         await attachment_task
+                        if messageType == MessageTypes.SEND:
+                            tasks.append(self.process_message(webhook,  message, messagesData))
+                        elif messageType == MessageTypes.REPLY: # Remove and combined_ids
+                            # Reply Jump message
+                            # view = await self.handle_reply(combined_ids, channel["channel_id"] )
+                            tasks.append( self.process_message(webhook, message, messagesData, embed))
+                        elif messageType == MessageTypes.DELETE and combined_ids:
+                            relative_message : discord.Message = await self.find_messageID(channel["channel_id"],combined_ids,)
+                            tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+                        elif messageType == MessageTypes.UPDATE and combined_ids:
+                            relative_message : discord.Message = await self.find_messageID(channel["channel_id"],combined_ids)
+                            tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+
+            await asyncio.gather(*tasks)
+            if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
+                await self.cache_message(lobby_name, messagesData)
+
+    async def process_message(self, webhook : Webhook, message : discord.Message, messagesData, embed = None):
+        try:
+            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
+
+            files = [await attachment.to_file() for attachment in message.attachments]
+            
+            # Check if the message contains a sticker
+            if message.stickers and not embed:  # If there's a sticker and embed argument is not provided
+                sticker = message.stickers[0]  # Assuming there's only one sticker in the message
+                embed = discord.Embed()
+                embed.set_image(url=sticker.url)
+                content = message.content
+            else:
+                embed = embed  # Use provided embed
+                content = message.content  # Use message content
+            wmsg : discord.WebhookMessage  = await webhook.send(
+                content=  content,
+                username=f"{message.author.global_name} || {message.guild.name}",
+                avatar_url=message.author.avatar.url,
+                allowed_mentions=allowed_mentions,
+                files=files,
+                embed = embed,
+                wait=True
+            )
+            messagesData["webhooksent"].append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id})
+
+            # This is jump command for the button view 
+            # it needs to be this way because its partial view which need to have a state
+            # if view and embed:
+            #     wmsg : discord.WebhookMessage  = await webhook.send(
+            #         content=  content,
+            #         username=f"{message.author.global_name} || {message.guild.name}",
+            #         avatar_url=message.author.avatar.url,
+            #         allowed_mentions=allowed_mentions,
+            #         files=files,
+            #         embed = embed,
+            #         view = view,
+            #         wait=True
+            #     )
+            # else:
+            #     wmsg : discord.WebhookMessage  = await webhook.send(
+            #         content=  content,
+            #         username=f"{message.author.global_name} || {message.guild.name}",
+            #         avatar_url=message.author.avatar.url,
+            #         allowed_mentions=allowed_mentions,
+            #         files=files,
+            #         embed = embed,
+            #         wait=True
+            #     )
+        except KeyError as k:
+            log.warning(k)
+        except Exception as e:
+            log.warning(e)
+    
+    async def process_edit_message(self, message: discord.Message, webhook : Webhook, message_id, messageType):
+        try:
+            content = "*[message deleted]*"
+            if messageType == MessageTypes.UPDATE:
+                 content = message.content
+
+            await webhook.edit_message(
+                message_id,
+                content = content,
+            )
+        except Exception as e:
+            log.warning(f"Failed to edit message {message.id}: {e}")
+
+   
+    async def find_messageID(self, target_channel_id,combined_ids):
+        channel = self.bot.get_channel(target_channel_id)
+        fetch_tasks = [self.try_fetch_message(target_channel_id, data, channel) for data in combined_ids]
+        fetched_messages = await asyncio.gather(*fetch_tasks)
+        replied_message = next((msg for msg in fetched_messages if msg is not None), None)
+        return replied_message
+    
+    async def handle_reply(self, combined_ids, target_channel_id):
+        """Handles reply Jump Button feature
+
+            Parameters:
+                combined_ids : list[ dict ]
+                target_channel_id : int
+            
+            Returns:
+                view: Discord.view, and None if replied_message is None
+        """
+        log.info("Getting the message id")
+        channel = self.bot.get_channel(target_channel_id)
+        fetch_tasks = [self.try_fetch_message(target_channel_id, data, channel) for data in combined_ids]
+        fetched_messages = await asyncio.gather(*fetch_tasks)
+        replied_message = next((msg for msg in fetched_messages if msg is not None), None)
+        log.info("Message found")
+        log.info(replied_message)
+        if replied_message:
+            view = discord.ui.View()
+            view.add_item(discord.ui.Button(label="Jump to message", style=discord.ButtonStyle.link, url=replied_message.jump_url))
+            return view
+        else:
+            log.warning("There's no replied message found")
+            return None
+
+    def create_webhook(self, webhook_url, session, messageType):
+        if messageType == MessageTypes.REPLY:
+            match = re.match(r'https://discord.com/api/webhooks/(\d+)/(.+)', webhook_url)
+            if not match:
+                raise ValueError("Invalid webhook URL format")
+            webhook_id, webhook_token = match.groups()
+            return discord.Webhook.partial(id=int(webhook_id), token=webhook_token, session=session, client=self.bot)
+        else:
+            return discord.Webhook.from_url(webhook_url, session=session)
+    
+    async def try_fetch_message(self, target_channel_id, data, channel):
+        try:
+            if data["channel"] == target_channel_id:
+                return await channel.fetch_message(data["messageId"])
+        except discord.NotFound:
+            return None
+             
+    async def prepare_reply_embed(self, message : discord.Message, lobby_name):
+        replied_message = await message.channel.fetch_message(message.reference.message_id)
+        embed = self.create_embed_for_message(replied_message)
+
+        # source_data = self.find_source_data(replied_message.id, lobby_name)
+
+        # combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"]}]
+        # combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != replied_message.id)
+
+        # return source_data, embed
+        return embed
+
+    def create_embed_for_message(self,replied_message : discord.Message):
+        embed = discord.Embed(description=f"{replied_message.content}", color=0xff69b4)
+        if replied_message.webhook_id:
+            author_name = replied_message.author.name
+        else:
+            author_name = f"{replied_message.author.global_name} || {replied_message.guild.name}"
+        embed.set_author(name=author_name, icon_url=replied_message.author.avatar.url)
+
+        for attachment in replied_message.attachments:
+            if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+                embed.set_image(url=attachment.url)
         
+        return embed
+    
+    def find_source_data(self, message_id, lobby_name):
+        for data in self.cacheMessages:
+            if data["lobbyname"] == lobby_name:
+                for messages in data["messages"]:
+                    if messages["source"] == message_id:
+                        return messages
+                    for webhook in messages["webhooksent"]:
+                        if webhook["messageId"] == message_id:
+                            return messages
+        return None
+    
+    async def cache_message(self, lobby_name, messagesData):
+        for data in self.cacheMessages:
+            if data["lobbyname"] == lobby_name:
+                data["messages"].append(messagesData)
+                await self.schedule_delete_cache_message(messagesData["source"], lobby_name)
+    
     async def get_lobby_count(self, lobby_name: str) -> int:
         count = 0
         async for document in self.bot.db.guilds_collection.find():
@@ -928,7 +887,59 @@ class OpenWorldServer(commands.Cog):
         # Sequence
         await Sequence(guild_id,channel_id)
 
+    # ======================================================================================
+    # Fuctions used for the commands
+    # ======================================================================================
+    def get_limit_server_lobby(self, name):
+        for lobby in self.server_lobbies:
+            if lobby["lobbyname"] == name:
+                return lobby["limit"]
 
+
+    def isUserBlackListed(self,id):
+        if self.muted_users:
+            for user in self.muted_users:
+                if user["id"] == id:
+                    return user
+        return None
+
+
+    def find_guild(self, guild_id: int, channel_id: int, tag: str = None):
+        """
+        Find a guild in the cached guild data by guild_id and channel_id.
+        
+        Args:
+            guild_id (int): The ID of the guild to find.
+            channel_id (int): The ID of the channel to find within the guild.
+        
+        Returns:
+            dict or None: The guild data if found, otherwise None.
+        """
+        for guild in self.guild_data:  
+            if guild["server_id"] == guild_id:  
+                channels = guild.get("channels", [])
+                for channel in channels: 
+                    if channel["channel_id"] == channel_id:
+                        return guild  
+        return None  
+
+    def findCachedLobby(self, lobbyName):
+        """
+            Finds the cache message 
+
+            Args:
+                lobbyname (str) : The name of the specified lobby
+            
+            Returns:
+                dict : the cache memory if found, otherwise none
+        """
+
+        for data in self.cacheMessages:
+            if lobbyName == data["lobbyname"]:
+                return data
+        
+        return None
+            
     async def log_report(self,message,reason):
         guild = self.bot.get_guild(939025934483357766)
         target_channel = guild.get_channel(1230069779071762473)
@@ -938,29 +949,8 @@ class OpenWorldServer(commands.Cog):
             description= f"**User {message.author.name} has been flagged due {reason}**\n\n**Message:**\n\n {message.content}"
         )
         embed.set_footer(text = f"userid {message.author.id}")
-        await target_channel.send(embed=embed)
+        await target_channel.send(embed=embed)        
 
-    #   async def is_private_lobby(self, lobby_name: str, author: discord.Member, ctx) -> bool:
-    #       private_lobbies = self.private_lobbies
-    
-    #       if lobby_name in private_lobbies:
-    #           def check(m):
-    #               return m.author == author and m.channel == ctx.channel
-            
-    #           await ctx.send(":lock: **Please enter the lobby password:**")
-            
-    #           try:
-    #               password_response = await self.bot.wait_for('message', check=check, timeout=30.0)
-    #           except asyncio.TimeoutError:
-    #               return False
-            
-    #           entered_password = password_response.content.strip()
-    #           correct_password = private_lobbies[lobby_name]
-            
-    #           if entered_password == correct_password:
-    #               return True
-    #       return False
-        
 
     def get_allowed_mentions(self, message, include_author=True):
         allowed_mentions = discord.AllowedMentions.none()
@@ -1014,7 +1004,144 @@ class OpenWorldServer(commands.Cog):
                     guilds.append(document)
         return guilds
     
+    async def create_guild_document(self, guild_id, channel : discord.TextChannel, server_name, lobby_name):
+        """
+        Create or update a guild document in the database and cache.
+        
+        Args:
+            guild_id (int): The ID of the guild.
+            channel (discord.TextChannel): The Discord text channel object.
+            server_name (str): The name of the server.
+            lobby_name (str): The name of the lobby.
+        
+        Returns:
+            bool: True if the operation is successful, False otherwise.
+        """
+
+        channel_id = channel.id  
+        guild_document = None
+        for guild in self.guild_data:  
+            if guild["server_id"] == guild_id:  
+                guild_document = guild
+        
+        webhook = await channel.create_webhook(name=server_name)
+        if guild_document:
+
+            channels = guild_document["channels"]  # Get the channels of the guild
+            if any(ch["channel_id"] == channel_id for ch in channels):  # Check if the channel already exists
+                return False  # Return False if the channel already exists
+
+            channels.append({"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url, "activity": False})  # Add the new channel
+            update_successful = await self.guild_repository.update({
+                "server_id": guild_id,
+                "channels": channels
+            })
+           
+            if update_successful:
+                for guild in self.guild_data:
+                    if guild["server_id"] == guild_id:
+                        guild["channels"] = channels
+                        for channel in guild["channels"]:
+                            if "activity" not in channel:
+                                channel["activity"] = False
+
+
+
+        else:
+            insertion_successful = await self.guild_repository.create({
+                "server_id": guild_id,
+                "server_name": server_name,
+                "channels": [{"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url, "activity": False}]
+            })
+
+            if insertion_successful:
+                # Add the new guild to the cache only if the database insertion was successful
+                self.guild_data.append({
+                    "server_id": guild_id,
+                    "server_name": server_name,
+                    "channels": [{"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url, "activity": False}],
+                })
+
+        return True
+
+    async def update_guild_lobby(self, guild_id: int, channel_id: int, lobby_name: str):
+        guild_document = None
+        for guild in self.guild_data:  
+            if guild["server_id"] == guild_id:  
+                guild_document = guild
+        if guild_document:
+            channels = guild_document["channels"] 
+
+            # Get's all the channel and change the lobby name then break
+            for channel in channels:
+                if channel["channel_id"] == channel_id:
+                    channel["lobby_name"] = lobby_name
+                    break
+            update_successful = await self.guild_repository.update({
+                "server_id": guild_id,
+                "channels": channels
+            })
+           
+            if update_successful:
+                for guild in self.guild_data:
+                    if guild["server_id"] == guild_id:
+                        guild["channels"] = channels
+                        for channel in guild["channels"]:
+                            if "activity" not in channel:
+                                channel["activity"] = False
+     
+    async def delete_guild_document(self, guild_id: int, channel_id: int):
+       
+        guild_document = None
+        for guild in self.guild_data:  
+            if guild["server_id"] == guild_id:  
+                guild_document = guild
+        # If data exists
+        if guild_document:
+            # Get all channels within the guild
+            channels = guild_document["channels"]
+
+            # Find the channel to delete and get its webhook
+            channel_to_delete = next((channel for channel in channels if channel["channel_id"] == channel_id), None)
+            
+            if channel_to_delete:
+                # Unregister the webhook
+                discord_channel = self.bot.get_channel(channel_id)
+                if discord_channel:
+                    webhooks = await discord_channel.webhooks()
+                    for webhook in webhooks:
+                        if webhook.id == channel_to_delete["webhook"]:
+                            await webhook.delete()
+                            break
+
+                # Remove the channel from the list
+                channels = [channel for channel in channels if channel["channel_id"] != channel_id]
+
+                # If there are still channels left, update the data
+                if channels:
+                    update_successful = await self.guild_repository.update({
+                        "server_id": guild_id,
+                        "channels": channels
+                    })
+                
+                    if update_successful:
+                        for guild in self.guild_data:
+                            if guild["server_id"] == guild_id:
+                                guild["channels"] = channels
+                                for channel in guild["channels"]:
+                                    if "activity" not in channel:
+                                        channel["activity"] = False
+
+                else:
+                    # Otherwise, delete the guild document
+                    result = await self.bot.db.guilds_collection.delete_one({"server_id": guild_id})
+                    if result:
+                        self.guild_data = [guild for guild in self.guild_data if guild["server_id"] != guild_id]
     
+
+    # ======================================================================================
+    # Moderation
+    # ======================================================================================
     @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
     async def report_user(self, ctx,username, reason, attacment:discord.Attachment):
         if not attacment:
@@ -1282,8 +1409,7 @@ async def setup(bot:commands.Bot):
 
 class MaliciousURLRepository():
     def __init__(self, db):
-        self.db = db
-        self.collection = self.db.malurl_collection
+        self.collection = db.malurl_collection()
 
     async def findAll(self):
             cursor = self.collection.find()
@@ -1311,8 +1437,8 @@ class MaliciousURLRepository():
             return None
 
 class MutedRepository():
-    def __init__(self,bot):
-        self.collection = bot.db.muted_collection
+    def __init__(self, db):
+        self.collection = db.muted_collection()
 
     async def findAll(self):
         cursor = self.collection.find()
@@ -1336,8 +1462,7 @@ class MutedRepository():
 
 class MaliciousWordsRepository():
     def __init__(self, db):
-        self.db = db
-        self.collection = self.db.malword_collection
+        self.collection = db.malword_collection()
 
     async def findAll(self):
         cursor = self.collection.find()
@@ -1411,8 +1536,7 @@ class Choice(discord.ui.View):
 
 class LobbyRepository():
     def __init__(self,db):
-        self.db = db
-        self.collection = self.db.lobby_collection
+        self.collection = db.lobby_collection()
 
     async def findAll(self):
         cursor = self.collection.find()
@@ -1466,8 +1590,7 @@ class LobbyRepository():
 
 class GuildRepository():
     def __init__(self, db):
-        self.db = db
-        self.collection = self.db.guilds_collection
+        self.collection = db.guilds_collection()
 
     async def findFilter(self, filter):
         cursor = self.collection.find(filter)
