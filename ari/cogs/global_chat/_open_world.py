@@ -12,7 +12,6 @@ from discord import ButtonStyle, Embed, Webhook
 
 from enum import Enum
 
-import schedule
 # All code is moved into one cog due to adding cogs probelem.
 # Issue is posted in  github
 
@@ -28,10 +27,10 @@ class OpenWorldServer(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
         self.server_lobbies = None
-        self.deleteMessageThreshold = 180
+        self.deleteMessageThreshold = 300
         self.controlChannel = 1230160106369318965
         self.cacheMessages = []
-
+        self.mods = []
         self.openworldThanksMessage = ("Thanks for connecting to the Open World Server! \n\n"+
          "**Remember to:** \n" +
          "> Be respectful and considerate. \n" +
@@ -76,9 +75,7 @@ class OpenWorldServer(commands.Cog):
     async def schedule_delete_cache_message(self, source_id, lobby_name):
         
         await asyncio.sleep(self.deleteMessageThreshold)
-
         self.delete_cache_message(source_id, lobby_name)
-        log.info(f"Deleted message with source ID {source_id} from lobby {lobby_name} after {self.deleteMessageThreshold} seconds")
 
 
     def generateLobbySchedulerData(self):
@@ -89,16 +86,7 @@ class OpenWorldServer(commands.Cog):
             }
             self.cacheMessages.append(data)
 
-    def signal_handler(self, sig, frame):
-        log.info('Received SIGINT, stopping scheduler...')
-        self.stop()
-        raise KeyboardInterrupt
 
-    def stop(self):
-        self.stop_scheduler = True
-        schedule.clear()
-
-    
     def repositoryInitialize(self):
         self.guild_repository = GuildRepository(self.bot.db)
         self.muted_repository = MutedRepository(self.bot.db)
@@ -674,9 +662,9 @@ class OpenWorldServer(commands.Cog):
                 data["messages"].append(messagesData)
                 await self.schedule_delete_cache_message(messagesData["source"], lobby_name)
     
-    async def get_lobby_count(self, lobby_name: str) -> int:
+    def get_lobby_count(self, lobby_name: str) -> int:
         count = 0
-        async for document in self.bot.db.guilds_collection.find():
+        for document in self.guild_data:
             channels = document.get("channels", [])
             for channel in channels:
                 if channel.get("lobby_name") == lobby_name:
@@ -702,7 +690,7 @@ class OpenWorldServer(commands.Cog):
                         limit = self.get_limit_server_lobby(lobby_name)
                         description = None
                         guilds =  self.getAllGuildUnderLobby(channel['lobby_name'])
-                        connection = await self.get_lobby_count(channel['lobby_name'])
+                        connection = self.get_lobby_count(channel['lobby_name'])
                         # Lobby Data
                         for lobby in self.server_lobbies:
                             if lobby["lobbyname"] == lobby_name:
@@ -1275,7 +1263,62 @@ class OpenWorldServer(commands.Cog):
         await self.muted_repository.create(data)
         self.muted_users.append(data)
         await ctx.send(embed=discord.Embed( description=f" User {user.id} ({user.name}) has been muted"))
+    
+    @commands.command(name='delete_message')
+    async def delete_message_by_mods(self, ctx, message_id, lobby_name):
+        channel = ctx.guild.get_channel(self.controlChannel)
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+        announce = await ctx.send(embed = Embed(description="Finding the Message in the cache"))
+        source_data = self.find_source_data(int(message_id), lobby_name)
+        if source_data:
+            combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"]}]
+            combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message_id)
+        else:
+            await ctx.send(embed=Embed(description=f"**Unknown ID {message_id}**\n\n"
+                                       "If this message has been out there for more than 5 minutes, I will be unable to delete the message."))
+        await announce.edit(embed= Embed(description="Commencing the deletion of the message"))
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            async def update_loading_message():
+                loading_stages = ["Deleting message.", "Deleting message..", "Deleting message..."]
+                stage_index = 0
+                while not all_tasks_done.is_set():
+                    await announce.edit(embed=Embed(description=loading_stages[stage_index]))
+                    stage_index = (stage_index + 1) % len(loading_stages)
+                    await asyncio.sleep(1)
 
+            all_tasks_done = asyncio.Event()
+            update_task = asyncio.create_task(update_loading_message())
+            try:
+                for document in self.guild_data:
+                    for channel in document["channels"]:
+                        if channel["lobby_name"] == lobby_name:
+                            webhook  = Webhook.from_url(channel["webhook"], session=session)
+                            message = await self.find_messageID(channel["channel_id"],combined_ids)
+                            tasks.append( self.process_delete_message_by_mods(webhook,message.id,channel["channel_id"]))
+                await asyncio.gather(*tasks)
+            finally:
+                all_tasks_done.set()
+                await update_task
+            await announce.edit(embed = Embed(description=f"Message with the ID {message_id} has been deleted"))
+    async def process_delete_message_by_mods(self,webhook,message_id,channel):
+        try:
+            await webhook.edit_message(
+                message_id,
+                content = "*[message deleted by moderator]*",
+            )
+        except Exception as e:
+            try:
+                channel = self.bot.get_channel(channel)
+                message = await channel.fetch_message(message_id)
+                if message:
+                    await message.add_reaction('❌')
+                    await channel.send("Your message has been deleted by the moderator. Please be mindful of what you send.")                        
+            except:
+                log.warning(" Failed to delete message ")
+            
     @commands.command(name='unmute')
     #@commands.has_role("@Ari Global Mod")
     async def UnMuteUser(self, ctx, id: int):
