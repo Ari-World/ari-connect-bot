@@ -54,6 +54,8 @@ class OpenWorldServer(commands.Cog):
 
         self.malicious_words = await self.malicious_words_repository.findAll()
         
+        self.moderator = await self.moderator_repository.findAll()
+
         self.initializeActivity()
     
     # Leading Scheduler for message
@@ -93,6 +95,7 @@ class OpenWorldServer(commands.Cog):
         self.lobby_repository = LobbyRepository(self.bot.db)
         self.malicious_urls_repository = MaliciousURLRepository(self.bot.db)
         self.malicious_words_repository = MaliciousWordsRepository(self.bot.db)
+        self.moderator_repository = ModeratorRepository(self.bot.db)
 
     # ======================================================================================
     # Bot Commands
@@ -391,7 +394,7 @@ class OpenWorldServer(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message_edit(self,before, after):
-        if before.author.bot:
+        if  after.content.startswith(self.bot.command_prefix) or before.author.bot:
             return
         
 
@@ -403,7 +406,15 @@ class OpenWorldServer(commands.Cog):
         # This mainly checks if this is the global chat or not
         if not guild_document:
             return
-
+        
+        status, word = self.contains_malicious_url(after.content)
+        if status:
+            await after.delete()
+            await after.author.send(embed = Embed( description= "Your message contains malicious content."
+                                                    "Please refrain from using inappropriate language or sharing harmful links.\n\n"
+                                                    f" Word: {word}"))    
+            await self.log_report(after, "Editing Malicious Content")
+            return
         
         await self.validate_webhook_channel(after, guild_document, channel_id, MessageTypes.UPDATE, before)
 
@@ -460,7 +471,7 @@ class OpenWorldServer(commands.Cog):
     async def send_to_matching_lobbies(self, message: discord.Message, lobby_name, channel_id, messageType: MessageTypes, msg2 = None):
         # Prepare messagesData
         if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
-            messagesData = {"source": message.id, "channel": message.channel.id,"webhooksent": []}
+            messagesData = {"source": message.id, "channel": message.channel.id, "author" : message.author.id,"webhooksent": []}
             embed = None
             source_data = None
 
@@ -471,11 +482,14 @@ class OpenWorldServer(commands.Cog):
             source_data = self.find_source_data(message.id, lobby_name)
 
             try:
-                combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"]}]
+                combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"], "author" : source_data["author"]}]
                 combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
-            except TypeError:
+            except TypeError as e:
                 channel = await self.bot.fetch_channel(channel_id)
-                await channel.send(" You're doing things too fast!! Slow down ")
+                log.info(e)
+            except UnboundLocalError as e:
+                log.info(e)
+
             if msg2:
                 await self.chat_log_report(message, MessageTypes.UPDATE, lobby_name, channel_id,msg2)
             else:
@@ -534,7 +548,7 @@ class OpenWorldServer(commands.Cog):
                 embed = embed,
                 wait=True
             )
-            messagesData["webhooksent"].append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id})
+            messagesData["webhooksent"].append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id})
 
             # This is jump command for the button view 
             # it needs to be this way because its partial view which need to have a state
@@ -567,12 +581,15 @@ class OpenWorldServer(commands.Cog):
     async def process_edit_message(self, message: discord.Message, webhook : Webhook, message_id, messageType):
         try:
             content = "*[message deleted]*"
+            attachments = []
             if messageType == MessageTypes.UPDATE:
-                 content = message.content
+                content = message.content
+                attachments = message.attachments
 
             await webhook.edit_message(
                 message_id,
                 content = content,
+                attachments=attachments if messageType == MessageTypes.UPDATE else []
             )
         except Exception as e:
             log.warning(f"Failed to edit message {message.id}: {e}")
@@ -1164,22 +1181,91 @@ class OpenWorldServer(commands.Cog):
 
                 else:
                     # Otherwise, delete the guild document
-                    result = await self.bot.db.guilds_collection.delete_one({"server_id": guild_id})
+                    result = await self.guild_repository.delete({"server_id": guild_id})
                     if result:
                         self.guild_data = [guild for guild in self.guild_data if guild["server_id"] != guild_id]
     
+    async def create_moderator_role(self,role,level):
+        
+        role_data = None
+        for data in self.moderator:
+            if data["level"] == level:
+                role_data = data
 
+        if role_data:
+
+            # Checks if the role exists
+            mods  = role_data["mods"]
+            if any(m["name"] == role["name"] for m in mods):
+                return False
+
+            # Add the user
+            mods.append({
+                "user_id": role["user_id"],
+                "name": role["name"],
+                "lobby_name" : role["lobby_name"]
+            })
+            update_successfull = await self.moderator_repository.update({
+                    "level": level,
+                    "mods" : mods
+                 })
+            
+            if update_successfull:
+                for mod in self.moderator:
+                    if mod["level"] == level:
+                        mod["mods"] = mods
+                        return True
+        else:
+            insertion_successfull = await self.moderator_repository.create({
+                "role_name" : role["role_name"],
+                "level": role["level"],
+                "mods" : []
+            })
+
+            if insertion_successfull:
+                self.moderator.append({
+                    "role_name" : role["role_name"],
+                    "level": role["level"],
+                    "mods" : []
+                })
+                return True
+   
+    # I feel like this will be rarely used but I'll add it anyways
+    async def delete_moderator_assigned_lobby(self, role,  level):
+        role_data = None
+        for data in self.moderator:
+            if data["level"] == level:
+                role_data = data
+
+    
+        if role_data:
+            mods = role_data["mods"]
+            # Filter out the lobby by lobby_name
+            mods = [mod for mod in mods if mod["lobby_name"] != role["lobby_name"]]
+            
+            if mods:
+                update_successful = await self.moderator.update({
+                    "level": role["level"],
+                    "mods" : mods
+                })
+                
+                if update_successful:
+                    for data in self.moderator:
+                        if data["level"] == role["level"]:
+                            data["mods"] = mods
+                            return True
+            else:
+                result = await self.moderator.delete({"level": level})
+                if result:
+                    self.moderator = [mod for mod in self.moderator if mod["level"] !=level]
+        else:
+            return False
+        
+                
     # ======================================================================================
     # Moderation
     # ======================================================================================
-    @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
-    async def report_user(self, ctx,username, reason, attacment:discord.Attachment):
-        if not attacment:
-            await ctx.send(embed=discord.Embed(description=f"Please provide a picture"))
-
-        await ctx.send(embed=discord.Embed(description=f"User has been reported"))
-        await self.log_report_by_user(username,ctx.author.name,reason,attacment)
-
+    
     @commands.command(name="moderation")
     #@commands.has_role("@Ari Global Mod")
     async def GcCommands(self,ctx):
@@ -1201,12 +1287,11 @@ class OpenWorldServer(commands.Cog):
             "`a!add_lobby \"Lobby Name\"` - Add public global chat\n"
             "`a!remove_lobby \"Lobby Name\"` - Remove public chat\n\n"
             
-            "`a!add_badlink` \"word\" - Add word to filter\n"
-            "`a!remove_links` \"word\" - Remove word to the list\n\n"
+            "`a!add_badlink \"word\"` - Add word to filter\n"
+            "`a!remove_links \"word\"` - Remove word to the list\n\n"
 
-
-            "`a!add_badwords` \"word\" - Add word to filter\n"
-            "`a!remove_badwords` \"word\" - Remove word to the list\n\n"
+            "`a!add_badwords \"word\"` - Add word to filter\n"
+            "`a!remove_badwords \"word\"` - Remove word to the list\n\n"
             
             "**Deprecated Commands**\n"
             "`a!reload data`- reload data in the cache (still working)\n"
@@ -1214,6 +1299,121 @@ class OpenWorldServer(commands.Cog):
         ), inline=False)
         await ctx.send(embed = embed)
         
+    @commands.hybrid_command(name="assign_role")
+    @commands.is_owner()
+    async def assignRole(self, ctx, level, user_id, lobby):
+        channel = ctx.guild.get_channel(self.controlChannel)
+        
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+        
+        # Checks if the role level is valid
+        data = None
+        for data in self.moderator:
+            if data["level"] == level:
+                break
+           
+        if data is None:
+            await ctx.send(embed = Embed(description="Moderation level doesnt exists"))
+            return
+        
+        lobby_name = lobby.upper() if lobby.lower() == "all" else lobby
+
+        try:
+            user = await self.bot.fetch_user(user_id)
+        except discord.NotFound:        
+            await ctx.send(embed = Embed(description="User not found."))
+        except discord.HTTPException:
+            await ctx.send(embed = Embed(description="An error occurred while fetching the user."))
+        
+        role = {
+            "user_id" :user_id,
+            "name" : user.name,
+            "lobby_name" : lobby_name
+        }
+
+        result = await self.create_moderator_role(role,level)
+        
+        if result:
+            await ctx.send(embed=discord.Embed(description="Role assigned successfully."))
+        else:
+            await ctx.send(embed=discord.Embed(description="Role assignment failed."))
+
+    @commands.hybrid_command(name="create_role")
+    @commands.is_owner()
+    async def createRole(self, ctx, level, role_name):
+        
+        for data in self.moderator:
+            if data["level"] == level:
+                await ctx.send(embed = Embed(description="Moderation level exists"))
+                return
+            
+        role = {
+            "role_name" : role_name,
+            "level": level,
+            "mods": []
+        }
+
+        result = await self.create_moderator_role(role, level)
+
+        if result:
+            await ctx.send(embed=discord.Embed(description="Role creation successfully."))
+        else:
+            await ctx.send(embed=discord.Embed(description="Role creation failed."))
+    
+    @commands.hybrid_command(name="remove_role")
+    @commands.is_owner()
+    async def removeRole(self, ctx, level):
+        channel = ctx.guild.get_channel(self.controlChannel)
+        
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+        
+         # Checks if the role level is valid
+        data = None
+        for data in self.moderator:
+            if data["level"] == level:
+                return
+            
+        if data is None:
+            await ctx.send(embed = Embed(description="Moderation level doesnt exists"))
+            return
+        
+        role = {
+            "role_name" : data["role_name"],
+            "level": level
+        }
+
+        result = await self.create_moderator_role(role, level)
+
+        if result:
+            await ctx.send(embed=discord.Embed(description="Role deletion successfully."))
+        else:
+            await ctx.send(embed=discord.Embed(description="Role deletion failed."))
+        
+
+    @commands.hybrid_command(name="listroles")
+    async def getAllRoles(self,ctx):
+        channel = ctx.guild.get_channel(self.controlChannel)
+        
+        if ctx.channel.id != self.controlChannel:
+            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
+            return
+        format_data = ""
+        if self.moderator:
+            x = 1
+            for data in self.moderator:
+                text = f"{str(x)}) **{data['role_name']}**\n Level: {data['level']}"
+                format_data += text + "\n"
+                x += 1
+        embed = discord.Embed(
+            title="Moderation List Roles",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
     @commands.command(name="listmuted")
     async def getAllMuted(self,ctx):
         channel = ctx.guild.get_channel(self.controlChannel)
@@ -1320,6 +1520,7 @@ class OpenWorldServer(commands.Cog):
         else:
             await ctx.send(embed=Embed(description=f"**Unknown ID {message_id}**\n\n"
                                        "If this message has been out there for more than 5 minutes, I will be unable to delete the message."))
+            return
         await announce.edit(embed= Embed(description="Commencing the deletion of the message"))
         async with aiohttp.ClientSession() as session:
             tasks = []
@@ -1356,8 +1557,13 @@ class OpenWorldServer(commands.Cog):
                 channel = self.bot.get_channel(channel)
                 message = await channel.fetch_message(message_id)
                 if message:
-                    await message.add_reaction('❌')
-                    await channel.send("Your message has been deleted by the moderator. Please be mindful of what you send.")                        
+                    await message.delete()
+                    await message.author.send(
+                        embed=Embed(
+                            description= (
+                            "Your message has been deleted by the moderator."
+                            " Please be mindful of what you send.\n\n "
+                            f"Content: {message.content}")))                        
             except:
                 log.warning(" Failed to delete message ")
             
@@ -1418,6 +1624,7 @@ class OpenWorldServer(commands.Cog):
         await ctx.send(embed = discord.Embed(
             description= f"Content has been added to list"
         ))
+    
     @commands.command(name='remove_links')
     async def RemoveBlockLinks(self, ctx, content):
         channel = ctx.guild.get_channel(self.controlChannel)
@@ -1464,7 +1671,15 @@ class OpenWorldServer(commands.Cog):
             await ctx.send(embed=discord.Embed( description=f" {exists["content"]} has been removed to the list"))
         else:    
             await ctx.send(embed=discord.Embed( description=f"{content}not found in the list"))
-          
+
+    # TODO: Create a app report or maybe improve
+    @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
+    async def report_user(self, ctx,username, reason, attacment:discord.Attachment):
+        if not attacment:
+            await ctx.send(embed=discord.Embed(description=f"Please provide a picture"))
+
+        await ctx.send(embed=discord.Embed(description=f"User has been reported"))
+        await self.log_report_by_user(username,ctx.author.name,reason,attacment)
 
     async def log_report_by_user(self,name,reportedBy, reason, attachments):
         guild = self.bot.get_guild(939025934483357766)
@@ -1671,7 +1886,6 @@ class LobbyRepository():
                 list.append(data)
 
             return list
-        
 
 class GuildRepository():
     def __init__(self, db):
@@ -1717,3 +1931,49 @@ class GuildRepository():
             return result.modified_count > 0
         else:
             return None  
+
+
+class ModeratorRepository():
+    def __init__(self, db):
+        self.collection = db.moderator_collection()
+
+    async def findFilter(self, filter):
+        cursor = self.collection.find(filter)
+        return await cursor.to_list(length=None)
+    
+    async def findAll(self):
+        cursor = self.collection.find()
+        return await cursor.to_list(length=None)
+    
+    async def findOne(self, user_id):
+        return await self.collection.find_one({"level": user_id})
+
+    async def create(self, data):
+        if await self.findOne(data["level"]):  
+            return None
+        try:
+            await self.collection.insert_one({
+                "role_name": data["role_name"],
+                "level": data["level"],
+                "mods": data["mods"]
+            }) 
+            return True 
+        except:
+            return False
+
+    async def delete(self,data):
+        if await self.findOne(data["level"]):  
+            await self.collection.delete_one({"level": data["level"]})  # Delete the guild document
+            return True
+        else:
+            return False  
+        
+    async def update(self,data):
+        if await self.findOne(data["level"]):  
+            result = await self.collection.update_one(
+                {"level": data["level"]},
+                {"$set": {"mods": data["mods"]}}
+            ) 
+            return result.modified_count > 0
+        else:
+            return None
