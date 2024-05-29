@@ -405,7 +405,7 @@ class OpenWorldServer(commands.Cog):
             return
 
         
-        await self.validate_webhook_channel(after, guild_document, channel_id, MessageTypes.UPDATE)
+        await self.validate_webhook_channel(after, guild_document, channel_id, MessageTypes.UPDATE, before)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -449,15 +449,15 @@ class OpenWorldServer(commands.Cog):
 
         await self.validate_webhook_channel(message, guild_document, channel_id, messageType)
 
-    async def validate_webhook_channel(self, message: discord.Message, guild_document, channel_id, messageType: MessageTypes):
+    async def validate_webhook_channel(self, message: discord.Message, guild_document, channel_id, messageType: MessageTypes,msg2 = None):
         # This function determines if where lobby should the message be sent     
         for channel in guild_document["channels"]:
             if channel["channel_id"] == channel_id and channel["webhook"]:    
-                await self.send_to_matching_lobbies(message, channel['lobby_name'], channel_id, messageType)
+                await self.send_to_matching_lobbies(message, channel['lobby_name'], channel_id, messageType, msg2)
             elif not channel["webhook"]:
                 await message.channel.send("Re-register this channel for webhook registration")
 
-    async def send_to_matching_lobbies(self, message: discord.Message, lobby_name, channel_id, messageType: MessageTypes ):
+    async def send_to_matching_lobbies(self, message: discord.Message, lobby_name, channel_id, messageType: MessageTypes, msg2 = None):
         # Prepare messagesData
         if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
             messagesData = {"source": message.id, "channel": message.channel.id,"webhooksent": []}
@@ -470,9 +470,17 @@ class OpenWorldServer(commands.Cog):
         if messageType == MessageTypes.DELETE or messageType == MessageTypes.UPDATE:
             source_data = self.find_source_data(message.id, lobby_name)
 
-            combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"]}]
-            combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
-        
+            try:
+                combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"]}]
+                combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
+            except TypeError:
+                channel = await self.bot.fetch_channel(channel_id)
+                await channel.send(" You're doing things too fast!! Slow down ")
+            if msg2:
+                await self.chat_log_report(message, MessageTypes.UPDATE, lobby_name, channel_id,msg2)
+            else:
+                await self.chat_log_report(message, MessageTypes.DELETE, lobby_name, channel_id)
+
         async with aiohttp.ClientSession() as session:
             tasks = []
 
@@ -937,8 +945,42 @@ class OpenWorldServer(commands.Cog):
             description= f"**User {message.author.name} has been flagged due {reason}**\n\n**Message:**\n\n {message.content}"
         )
         embed.set_footer(text = f"userid {message.author.id}")
-        await target_channel.send(embed=embed)        
+        await target_channel.send(embed=embed)
 
+    async def chat_log_report(
+            self,message : discord.Message, 
+            messageType, 
+            lobbyName,
+            channel_id,
+            message2 : discord.Message = None):
+        channel = await self.bot.fetch_channel(channel_id)
+        guild = self.bot.get_guild(939025934483357766)
+        target_channel = guild.get_channel(1245210465919827979)
+        
+            
+        if messageType == MessageTypes.DELETE:
+            embed = Embed(
+                description="**Chat log**\n\n"
+                f"**User**: {message.author.global_name}\n"
+                "**Action**: Delete\n"
+                f"**Lobby**: {lobbyName}\n"
+                f"**Message**: {message.content}\n"
+                )
+            embed.set_footer(text = f"userid {message.author.id} || message ID {message.id}")
+            await target_channel.send(embed=embed)
+        elif messageType == MessageTypes.UPDATE:
+            embed=Embed(
+                description="**Chat log**\n\n"
+                f"**User**: {message.author.global_name}\n"
+                "**Action**: Edit\n"
+                f"**Lobby**: {lobbyName}\n"
+                f"**Before**: {message2.content}\n"
+                f"**After**: {message.content}"
+                )
+            embed.set_footer(text = f"userid {message.author.id} || message ID {message2.id}")
+            await target_channel.send(embed = embed)
+    
+        # await channel.send("Message Deleted too fast. I can now delete it ")
 
     def get_allowed_mentions(self, message, include_author=True):
         allowed_mentions = discord.AllowedMentions.none()

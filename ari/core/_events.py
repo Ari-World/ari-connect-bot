@@ -137,7 +137,7 @@ def init_events(bot):
         await channel.send(embed=embed)
         log.info(f'Bot has been added to a new server {guild.name}\n\n Added by {guild.owner.global_name } ({guild.owner.id})')
         guildx = bot.get_guild(939025934483357766)
-        target_log = guildx.get_channel(1230069779071762473)
+        target_log = guildx.get_channel(1245210888290439300)
         # target_channel = guild.system_channel  # Use the system channel for the guild
         # if target_channel is not None:  # Ensure there's a system channel
         #     await target_channel.send()
