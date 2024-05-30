@@ -27,7 +27,7 @@ class OpenWorldServer(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
         self.server_lobbies = None
-        self.deleteMessageThreshold = 300
+        self.deleteMessageThreshold = 3600
         self.controlChannel = 1230160106369318965
         self.cacheMessages = []
         self.mods = []
