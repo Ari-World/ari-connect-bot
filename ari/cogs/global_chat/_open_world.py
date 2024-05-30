@@ -529,20 +529,34 @@ class OpenWorldServer(commands.Cog):
             allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
 
             files = [await attachment.to_file() for attachment in message.attachments]
-            
+            modIcon = None
+            for modData in self.moderator:
+                for mod in modData["mods"]:
+                    if mod["user_id"] == str(message.author.id):
+                        modIcon = modData["icon"]
+                        break
+            if modIcon:
+                
+                username = f"{modIcon} {message.author.global_name} || {message.guild.name}"
+            else:
+                username = f"{message.author.global_name} || {message.guild.name}"
             # Check if the message contains a sticker
             if message.stickers and not embed:  # If there's a sticker and embed argument is not provided
                 sticker = message.stickers[0]  # Assuming there's only one sticker in the message
-                embed = discord.Embed()
-                embed.set_image(url=sticker.url)
+                embed = discord.Embed(f"{message.author.global_name} || {message.guild.name} has sent a sticker")
+                embed.set_image(url=sticker.url if hasattr(sticker, 'url') else sticker.image_url)
                 content = message.content
             else:
                 embed = embed  # Use provided embed
                 content = message.content  # Use message content
+
+            # Allows default avatar if theres none
+            avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
+            
             wmsg : discord.WebhookMessage  = await webhook.send(
                 content=  content,
-                username=f"{message.author.global_name} || {message.guild.name}",
-                avatar_url=message.author.avatar.url,
+                username= username,
+                avatar_url= avatar_url,
                 allowed_mentions=allowed_mentions,
                 files=files,
                 embed = embed,
@@ -1218,6 +1232,7 @@ class OpenWorldServer(commands.Cog):
         else:
             insertion_successfull = await self.moderator_repository.create({
                 "role_name" : role["role_name"],
+                "icon": role["icon"],
                 "level": role["level"],
                 "mods" : []
             })
@@ -1225,41 +1240,37 @@ class OpenWorldServer(commands.Cog):
             if insertion_successfull:
                 self.moderator.append({
                     "role_name" : role["role_name"],
+                    "icon": role["icon"],
                     "level": role["level"],
                     "mods" : []
                 })
                 return True
    
-    # I feel like this will be rarely used but I'll add it anyways
-    async def delete_moderator_assigned_lobby(self, role,  level):
-        role_data = None
-        for data in self.moderator:
-            if data["level"] == level:
-                role_data = data
-
-    
-        if role_data:
-            mods = role_data["mods"]
-            # Filter out the lobby by lobby_name
-            mods = [mod for mod in mods if mod["lobby_name"] != role["lobby_name"]]
+    # This will only delete the mod data but not the role data
+    async def delete_moderator_assigned_lobby(self, modData,role):
+        
+        mods = modData["mods"]
+        # Filter out the lobby by lobby_name
+        mods = [mod for mod in mods if mod["user_id"] != role["user_id"]]
+        
+        if mods:
+            update_successful = await self.moderator_repository.update({
+                "level": modData["level"],
+                "mods" : mods
+            })
             
-            if mods:
-                update_successful = await self.moderator.update({
-                    "level": role["level"],
-                    "mods" : mods
-                })
-                
-                if update_successful:
-                    for data in self.moderator:
-                        if data["level"] == role["level"]:
-                            data["mods"] = mods
-                            return True
-            else:
-                result = await self.moderator.delete({"level": level})
-                if result:
-                    self.moderator = [mod for mod in self.moderator if mod["level"] !=level]
+            if update_successful:
+                for data in self.moderator:
+                    if data["level"] == modData["level"]:
+                        data["mods"] = mods
+                        return True
         else:
             return False
+            # result = await self.moderator_repository.delete({"level": level})
+            # if result:
+            #     self.moderator = [mod for mod in self.moderator if mod["level"] !=level]
+            #     return True
+
         
                 
     # ======================================================================================
@@ -1312,8 +1323,12 @@ class OpenWorldServer(commands.Cog):
         data = None
         for data in self.moderator:
             if data["level"] == level:
+                for mod in data["mods"]:
+                    if mod["user_id"] == user_id:
+                        await ctx.send(embed = Embed(description=f"User ({user_id})has all ready been assigned"))
+                        return
                 break
-           
+
         if data is None:
             await ctx.send(embed = Embed(description="Moderation level doesnt exists"))
             return
@@ -1342,19 +1357,19 @@ class OpenWorldServer(commands.Cog):
 
     @commands.hybrid_command(name="create_role")
     @commands.is_owner()
-    async def createRole(self, ctx, level, role_name):
-        
+    async def createRole(self, ctx, level, role_name, icon):
         for data in self.moderator:
             if data["level"] == level:
                 await ctx.send(embed = Embed(description="Moderation level exists"))
                 return
-            
+        
         role = {
             "role_name" : role_name,
+            "icon": str(icon),
             "level": level,
             "mods": []
         }
-
+        log.info(role)
         result = await self.create_moderator_role(role, level)
 
         if result:
@@ -1364,7 +1379,7 @@ class OpenWorldServer(commands.Cog):
     
     @commands.hybrid_command(name="remove_role")
     @commands.is_owner()
-    async def removeRole(self, ctx, level):
+    async def removeRole(self, ctx, user_id ):
         channel = ctx.guild.get_channel(self.controlChannel)
         
         if ctx.channel.id != self.controlChannel:
@@ -1372,21 +1387,19 @@ class OpenWorldServer(commands.Cog):
             return
         
          # Checks if the role level is valid
-        data = None
+        modData = None
+        role = None
         for data in self.moderator:
-            if data["level"] == level:
-                return
-            
-        if data is None:
-            await ctx.send(embed = Embed(description="Moderation level doesnt exists"))
-            return
-        
-        role = {
-            "role_name" : data["role_name"],
-            "level": level
-        }
+            for mod in data["mods"]:
+                if mod["user_id"] == user_id:
+                    modData = data
+                    role = mod
+                    break
 
-        result = await self.create_moderator_role(role, level)
+        if modData is None:
+            await ctx.send(embed = Embed(description=f" User {user_id} doesnt exists"))
+            return
+        result = await self.delete_moderator_assigned_lobby(modData,role)
 
         if result:
             await ctx.send(embed=discord.Embed(description="Role deletion successfully."))
@@ -1405,9 +1418,18 @@ class OpenWorldServer(commands.Cog):
         if self.moderator:
             x = 1
             for data in self.moderator:
-                text = f"{str(x)}) **{data['role_name']}**\n Level: {data['level']}"
+                
+                text = f" {data["icon"]} **{data['role_name']}**\n Level: {data['level']}\n"
+                
+                y = 1
+                for mod in data["mods"]:
+                    modText = f"> {str(y)}. {mod['name']} ({mod['user_id']})\n > Lobby: {mod['lobby_name']}"
+
+                    text += modText + "\n"
+                    y +=1 
                 format_data += text + "\n"
-                x += 1
+        else:
+            format_data = "No moderation roles found."
         embed = discord.Embed(
             title="Moderation List Roles",
             description=format_data
@@ -1429,6 +1451,8 @@ class OpenWorldServer(commands.Cog):
                 text = f"{str(x)}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
                 format_data += text + "\n"
                 x += 1
+        else:
+            format_data = "No moderation roles found."
 
         embed = discord.Embed(
             title="Muted List",
@@ -1954,6 +1978,7 @@ class ModeratorRepository():
         try:
             await self.collection.insert_one({
                 "role_name": data["role_name"],
+                "icon": data["icon"],
                 "level": data["level"],
                 "mods": data["mods"]
             }) 
