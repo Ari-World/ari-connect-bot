@@ -28,9 +28,8 @@ class OpenWorldServer(commands.Cog):
         self.bot = bot
         self.server_lobbies = None
         self.deleteMessageThreshold = 3600
-        self.controlChannel = 1230160106369318965
         self.cacheMessages = []
-        self.mods = []
+        self.mute_task = {}
         self.openworldThanksMessage = ("Thanks for connecting to the Open World Server! \n\n"+
          "**Remember to:** \n" +
          "> Be respectful and considerate. \n" +
@@ -53,7 +52,8 @@ class OpenWorldServer(commands.Cog):
         self.malicious_urls = await self.malicious_urls_repository.findAll()
 
         self.malicious_words = await self.malicious_words_repository.findAll()
-        
+        log.info(self.malicious_words)
+
         self.moderator = await self.moderator_repository.findAll()
 
         self.initializeActivity()
@@ -152,8 +152,14 @@ class OpenWorldServer(commands.Cog):
 
         await msg.edit(embed=embed)
 
-    @commands.command(name="reloaddata")
+    @commands.hybrid_command(name="reloaddata")
     async def reload(self,ctx):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+            
         await self.cog_load()
         await ctx.send(embed=Embed(
             description=" Data Loaded ",
@@ -378,7 +384,8 @@ class OpenWorldServer(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message_delete(self, message:discord.Message):
-        if message.author.bot:  # Check if the author of the deleted message is the bot
+        # Check if the author of the deleted message is the bot
+        if message.author.bot: 
             return
 
         guild_id = message.guild.id
@@ -394,6 +401,7 @@ class OpenWorldServer(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message_edit(self,before, after):
+
         if  after.content.startswith(self.bot.command_prefix) or before.author.bot:
             return
         
@@ -421,6 +429,13 @@ class OpenWorldServer(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
 
+        # # Handles on reply moderation
+        # if message.type == discord.MessageType.reply and message.content.startswith(self.bot.command_prefix):
+        #     allowed = self.ValidateUser(message.author.id)
+        #     if allowed:
+        #         log.info(message)
+        #         log.info(message.reference)
+            
         
         if message.content.startswith(self.bot.command_prefix) or message.author.bot:
             return
@@ -482,7 +497,12 @@ class OpenWorldServer(commands.Cog):
             source_data = self.find_source_data(message.id, lobby_name)
 
             try:
-                combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"], "author" : source_data["author"]}]
+                combined_ids = [
+                    {"channel": source_data["channel"], 
+                     "messageId": source_data["source"], 
+                     "author" : source_data["author"]
+                     }]
+                
                 combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
             except TypeError as e:
                 channel = await self.bot.fetch_channel(channel_id)
@@ -560,7 +580,7 @@ class OpenWorldServer(commands.Cog):
                 allowed_mentions=allowed_mentions,
                 files=files,
                 embed = embed,
-                wait=True
+                wait=True,
             )
             messagesData["webhooksent"].append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id})
 
@@ -596,23 +616,31 @@ class OpenWorldServer(commands.Cog):
         try:
             content = "*[message deleted]*"
             attachments = []
+            embeds = []
+            
             if messageType == MessageTypes.UPDATE:
                 content = message.content
                 attachments = message.attachments
+                embeds = message.embeds
 
             await webhook.edit_message(
                 message_id,
                 content = content,
-                attachments=attachments if messageType == MessageTypes.UPDATE else []
+                attachments=attachments if messageType == MessageTypes.UPDATE else [],
+                embeds= embeds if messageType == MessageTypes.UPDATE else []
             )
+
         except Exception as e:
             log.warning(f"Failed to edit message {message.id}: {e}")
 
    
     async def find_messageID(self, target_channel_id,combined_ids):
         channel = self.bot.get_channel(target_channel_id)
+
         fetch_tasks = [self.try_fetch_message(target_channel_id, data, channel) for data in combined_ids]
+       
         fetched_messages = await asyncio.gather(*fetch_tasks)
+        
         replied_message = next((msg for msg in fetched_messages if msg is not None), None)
         return replied_message
     
@@ -1276,48 +1304,394 @@ class OpenWorldServer(commands.Cog):
     # ======================================================================================
     # Moderation
     # ======================================================================================
+    def ValidateUser(self,user_id):
+        for modData in self.moderator:
+                if modData["level"] == "1" or  modData["level"] == "2" or  modData["level"] == "3":
+                    for mod in modData["mods"]:
+                        if mod["user_id"] == str(user_id):
+                            return True                    
+        return False
     
-    @commands.command(name="moderation")
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="moderation")
     #@commands.has_role("@Ari Global Mod")
     async def GcCommands(self,ctx):
-        embed = discord.Embed(
-            title="Moderation Commands",
-            description= (
-                "Commands aren't registered as slash commands for limited visibility"
-            ),
-            color=0xFFC0CB
-        )
-        embed.add_field(name="Global Chat Commands", value=(
-            "`a!listmuted` - Shows all muted user globally\n"
-            "`a!listbadwords` - Shows all banned words\n"
-            "`a!listbadurls` - Shows all banned urls\n\n"
+        if self.ValidateUser(ctx.author.id):
+            embed = discord.Embed(
+                title="Moderation Commands",
+                description= (
+                    "All Moderation commands is now available as a Slash command (experimental)\n but still try to work on normal commands"
+                ),
+                color=0xFFC0CB
+            )
+            embed.add_field(name="Global Chat Commands", value=(
+                
             
-            "`a!mute <id> \" reason \"` - Mute user globally\n"
-            "`a!unmute <id>` - Unmute user id\n\n"
+                "`a!listmuted` - Shows all muted user globally\n"
+                "`a!listbadwords` - Shows all banned words\n"
+                "`a!listbadurls` - Shows all banned urls\n\n"
+                
+                "`a!mute <id> \" reason \"` - Mute user globally\n"
+                "`a!unmute <id>` - Unmute user id\n\n"
 
-            "`a!add_lobby \"Lobby Name\"` - Add public global chat\n"
-            "`a!remove_lobby \"Lobby Name\"` - Remove public chat\n\n"
-            
-            "`a!add_badlink \"word\"` - Add word to filter\n"
-            "`a!remove_links \"word\"` - Remove word to the list\n\n"
+                "`a!add_lobby \"Lobby Name\"` - Add public global chat\n"
+                "`a!remove_lobby \"Lobby Name\"` - Remove public chat\n\n"
+                
+                "`a!add_badlink \"word\"` - Add word to filter\n"
+                "`a!remove_links \"word\"` - Remove word to the list\n\n"
 
-            "`a!add_badwords \"word\"` - Add word to filter\n"
-            "`a!remove_badwords \"word\"` - Remove word to the list\n\n"
+                "`a!add_badwords \"word\"` - Add word to filter\n"
+                "`a!remove_badwords \"word\"` - Remove word to the list\n\n"
+                
+                "`a!delete` - Reply to a message and just run this command, it will automatically delete message\n\n" 
+
+                "**Deprecated Commands**\n"
+                "`a!reload data`- reload data in the cache (still working)\n"
+                "Reason: Removed because its already automated, beware to reload data unless necessary causes database query overload\n\n"
             
-            "**Deprecated Commands**\n"
-            "`a!reload data`- reload data in the cache (still working)\n"
-            "Reason: Removed because its already automated, beware to reload data unless necessary causes database query overload"
-        ), inline=False)
-        await ctx.send(embed = embed)
+            ), inline=False)
+            await ctx.send(embed = embed)
+
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="listroles")
+    async def getAllRoles(self,ctx):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
         
+        format_data = ""
+        if self.moderator:
+            x = 1
+            for data in self.moderator:
+                
+                text = f" {data["icon"]} **{data['role_name']}**\n Level: {data['level']}\n"
+                
+                y = 1
+                for mod in data["mods"]:
+                    modText = f"> {str(y)}. {mod['name']} ({mod['user_id']})\n > Lobby: {mod['lobby_name']}"
+
+                    text += modText + "\n"
+                    y +=1 
+                format_data += text + "\n"
+        else:
+            format_data = "No moderation roles found."
+        embed = discord.Embed(
+            title="Moderation List Roles",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="listmuted")
+    async def getAllMuted(self,ctx):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+        
+        format_data = ""
+        if self.muted_users:
+            x=1
+            for data in self.muted_users:
+                text = f"{str(x)}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
+                format_data += text + "\n"
+                x += 1
+        else:
+            format_data = "No users found."
+
+        embed = discord.Embed(
+            title="Muted List",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="listbadwords")
+    async def getAllBadwords(self,ctx):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+        
+        format_data = ""
+        if self.malicious_words:
+            x=1
+            for data in self.malicious_words:
+                text = f"{str(x)}) {data["content"]} "
+                format_data += text + "\n"
+                x += 1
+
+        embed = discord.Embed(
+            title="Banned Words",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="listbadurls")
+    async def getAllBadUrls(self,ctx):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+        
+        format_data = ""
+        if self.malicious_urls:
+            x=1
+            for data in self.malicious_urls:
+                text = f"{str(x)}) {data["content"]} "
+                format_data += text + "\n"
+                x += 1
+
+        embed = discord.Embed(
+            title="Banned Urls",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name='delete')
+    async def delete_message_by_mods(self, ctx):
+        # Only level 1 2 can delete use this command
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))                                                         
+            return
+        guild_id = ctx.message.guild.id
+        channel_id = ctx.message.channel.id
+        guild_document = self.find_guild(guild_id, channel_id)
+        
+        for channel in guild_document["channels"]:
+            if channel["channel_id"] == channel_id:
+                lobby_name = channel["lobby_name"]
+                break
+        data = {
+            "message_id":ctx.message.reference.message_id, 
+            "lobby_name":lobby_name,
+        }     
+        await self.handle_delete_by_command(ctx.message.reference.message_id, lobby_name, ctx)   
+        await self.log_mod("Delete",data,ctx.message.author.id)
+
+    async def handle_delete_by_command(self,message_id, lobby_name, ctx):
+        announce = await ctx.send(embed = Embed(description="Finding the Message in the cache"))
+        
+        source_data = self.find_source_data(int(message_id), lobby_name)
+
+        if source_data:
+            combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"]}]
+            combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message_id)
+        else:
+            await announce.edit(embed=Embed(description=f"**Unknown ID {message_id}**\n\n"
+                                       "If this message has been out there for more than 5 minutes, I will be unable to delete the message."))
+            return
+        await announce.edit(embed= Embed(description="Commencing the deletion of the message"))
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            
+            async def update_loading_message():
+                loading_stages = ["Deleting message.", "Deleting message..", "Deleting message..."]
+                stage_index = 0
+                while not all_tasks_done.is_set():
+                    await announce.edit(embed=Embed(description=loading_stages[stage_index]))
+                    stage_index = (stage_index + 1) % len(loading_stages)
+                    await asyncio.sleep(1)
+            
+            all_tasks_done = asyncio.Event()
+            update_task = asyncio.create_task(update_loading_message())
+            try:
+                for document in self.guild_data:
+                    
+                    for channel in document["channels"]:
+                        if channel["lobby_name"] == str(lobby_name) and channel["channel_id"] != ctx.message.channel.id:
+                            webhook  = Webhook.from_url(channel["webhook"], session=session)
+                            message = await self.find_messageID(channel["channel_id"],combined_ids)
+                            tasks.append( self.process_delete_message_by_mods(webhook,message.id,channel["channel_id"]))
+                await asyncio.gather(*tasks)
+            finally:
+                all_tasks_done.set()
+                await update_task
+            await announce.edit(embed = Embed(description=f"Message with the ID {message_id} has been deleted"))
+
+    async def process_delete_message_by_mods(self,webhook,message_id,channel):
+        try:
+            await webhook.edit_message(
+                message_id,
+                content = "*[message deleted by moderator]*",
+            )
+        except Exception as e:
+            try:
+                channel = self.bot.get_channel(channel)
+                message = await channel.fetch_message(message_id)
+                if message:
+                    await message.delete()
+                    await message.author.send(
+                        embed=Embed(
+                            description= (
+                            "Your message has been deleted by the moderator."
+                            " Please be mindful of what you send.\n\n "
+                            f"Content: {message.content}")))                        
+            except:
+                log.warning(" Failed to delete message ")
+    
+    # Chat Moderation Commands
+    @commands.hybrid_command(name='mute', description ="Reply to a user to mute them or use the user_id")
+    #@commands.has_role("@Ari Global Mod")
+    async def MuteUser(self, ctx,reason:str, id : int = None):
+        
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+        
+        user = None
+        if not id:
+            # If id is not provided
+            guild_id = ctx.message.guild.id
+            channel_id = ctx.message.channel.id
+            guild_document = self.find_guild(guild_id, channel_id)
+            
+            for channel in guild_document["channels"]:
+                if channel["channel_id"] == channel_id:
+                    lobby_name = channel["lobby_name"]
+                    break
+            source = self.find_source_data(ctx.message.reference.message_id, lobby_name)
+
+            user = await self.bot.fetch_user(source["author"])
+
+        else:
+            guild_id = ctx.message.guild.id
+            channel_id = ctx.message.channel.id
+            guild_document = self.find_guild(guild_id, channel_id)
+
+            for channel in guild_document["channels"]:
+                if channel["channel_id"] == channel_id:
+                    lobby_name = channel["lobby_name"]
+            source = self.find_source_data(id, lobby_name)
+
+            user = await self.bot.fetch_user(source["source"])
+            
+        if user.bot or not user:
+                await ctx.send(embed=discord.Embed( description=" No User Found"))
+                return
+    
+        data = {
+            "id": user.id,
+            "name" : user.name,
+            "reason": reason,
+            "mutedBy" : ctx.message.author.name
+        }
+
+        await self.muted_repository.create(data)
+        self.muted_users.append(data)
+        await ctx.send(embed=discord.Embed( description=f" User {user.id} ({user.name}) has been muted"))
+        await self.log_mod("Mute",data,ctx.message.author.id)
+
+
+    @commands.hybrid_command(name='unmute')
+    #@commands.has_role("@Ari Global Mod")
+    async def UnMute(self, ctx, id: int = None):
+        
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+        
+        exists = None
+        for data in self.muted_users:
+            if data["id"] == id:
+                exists = data
+        
+        if not exists:
+                await ctx.send(embed=discord.Embed( description=" No User Found"))
+                return
+        
+          
+        sender = self.bot.get_user(id) 
+        await self.muted_repository.delete(exists["id"])
+        self.muted_users.remove(exists)
+        await sender.send(embed=discord.Embed(description=f"You have been unmuted from Global Chat!\n\n Welcome back! try to not get reported again"))
+        await ctx.send(embed=discord.Embed( description=f" User {exists["id"]} ({exists["name"]}) has been unmuted"))
+        await self.log_mod("Unmute",exists,ctx.message.author.id)
+
+    @commands.hybrid_command(name='add_badlink')
+    async def AddblockLinks(self, ctx, content):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+       
+        self.malicious_urls.append({"content":content})
+        await self.malicious_urls_repository.create(content)
+        await ctx.send(embed = discord.Embed(
+            description= f"Content has been added to list"
+        ))
+        await self.log_mod("add_badlink",content,ctx.message.author.id)
+
+    
+    @commands.hybrid_command(name='remove_links')
+    async def RemoveBlockLinks(self, ctx, content):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+
+        exists = await self.malicious_urls_repository.findOne(content)
+ 
+        if exists:
+            await self.muted_repository.delete(exists["content"])
+            self.malicious_urls.remove(exists)
+            await ctx.send(embed=discord.Embed( description=f" {exists["content"]} has been removed to the list"))
+            await self.log_mod("remove_links",exists,ctx.message.author.id)
+        else:    
+            await ctx.send(embed=discord.Embed( description=f"{content}not found in the list"))
+
+    @commands.hybrid_command(name='add_badwords')
+    async def Addblockwords(self,ctx, content):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+        
+        self.malicious_words.append({"content":content})
+        await self.malicious_words_repository.create(content)
+        await ctx.send(embed = discord.Embed(
+            description= f"Content has been added to list"
+        ))
+        await self.log_mod("add_badwords",content,ctx.message.author.id)
+
+    
+    @commands.hybrid_command(name='remove_badwords')
+    async def RemoveBlockWorlds(self, ctx, content):
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
+        
+        exists = await self.malicious_words_repository.findOne(content)
+ 
+        if exists:
+            await self.muted_repository.delete(exists["content"])
+            self.malicious_words.remove(exists)
+            await ctx.send(embed=discord.Embed( description=f" {exists["content"]} has been removed to the list"))
+            await self.log_mod("remove_badwords",exists,ctx.message.author.id)
+        else:    
+            await ctx.send(embed=discord.Embed( description=f"{content}not found in the list"))
+
+    # Owner only Commands
     @commands.hybrid_command(name="assign_role")
     @commands.is_owner()
     async def assignRole(self, ctx, level, user_id, lobby):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
         
         # Checks if the role level is valid
         data = None
@@ -1352,12 +1726,14 @@ class OpenWorldServer(commands.Cog):
         
         if result:
             await ctx.send(embed=discord.Embed(description="Role assigned successfully."))
+            await self.log_mod("assign_role",role,ctx.message.author.id)
         else:
             await ctx.send(embed=discord.Embed(description="Role assignment failed."))
 
     @commands.hybrid_command(name="create_role")
     @commands.is_owner()
     async def createRole(self, ctx, level, role_name, icon):
+        
         for data in self.moderator:
             if data["level"] == level:
                 await ctx.send(embed = Embed(description="Moderation level exists"))
@@ -1374,18 +1750,14 @@ class OpenWorldServer(commands.Cog):
 
         if result:
             await ctx.send(embed=discord.Embed(description="Role creation successfully."))
+            await self.log_mod("create_role",role,ctx.message.author.id)
         else:
             await ctx.send(embed=discord.Embed(description="Role creation failed."))
     
     @commands.hybrid_command(name="remove_role")
     @commands.is_owner()
     async def removeRole(self, ctx, user_id ):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        
+
          # Checks if the role level is valid
         modData = None
         role = None
@@ -1403,223 +1775,18 @@ class OpenWorldServer(commands.Cog):
 
         if result:
             await ctx.send(embed=discord.Embed(description="Role deletion successfully."))
+            await self.log_mod("remove_role",modData,ctx.message.author.id)
         else:
             await ctx.send(embed=discord.Embed(description="Role deletion failed."))
         
-
-    @commands.hybrid_command(name="listroles")
-    async def getAllRoles(self,ctx):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        format_data = ""
-        if self.moderator:
-            x = 1
-            for data in self.moderator:
-                
-                text = f" {data["icon"]} **{data['role_name']}**\n Level: {data['level']}\n"
-                
-                y = 1
-                for mod in data["mods"]:
-                    modText = f"> {str(y)}. {mod['name']} ({mod['user_id']})\n > Lobby: {mod['lobby_name']}"
-
-                    text += modText + "\n"
-                    y +=1 
-                format_data += text + "\n"
-        else:
-            format_data = "No moderation roles found."
-        embed = discord.Embed(
-            title="Moderation List Roles",
-            description=format_data
-        )
-        await ctx.send(embed=embed)
-
-    @commands.command(name="listmuted")
-    async def getAllMuted(self,ctx):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        
-        format_data = ""
-        if self.muted_users:
-            x=1
-            for data in self.muted_users:
-                text = f"{str(x)}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
-                format_data += text + "\n"
-                x += 1
-        else:
-            format_data = "No moderation roles found."
-
-        embed = discord.Embed(
-            title="Muted List",
-            description=format_data
-        )
-        await ctx.send(embed=embed)
-
-    # TODO: Improve Embed
-    @commands.command(name="listbadwords")
-    async def getAllBadwords(self,ctx):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        
-        format_data = ""
-        if self.malicious_words:
-            x=1
-            for data in self.malicious_words:
-                text = f"{str(x)}) {data["content"]} "
-                format_data += text + "\n"
-                x += 1
-
-        embed = discord.Embed(
-            title="Banned Words",
-            description=format_data
-        )
-        await ctx.send(embed=embed)
-
-    # TODO: Improve Embed
-    @commands.command(name="listbadurls")
-    async def getAllBadUrls(self,ctx):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        
-        format_data = ""
-        if self.malicious_urls:
-            x=1
-            for data in self.malicious_urls:
-                text = f"{str(x)}) {data["content"]} "
-                format_data += text + "\n"
-                x += 1
-
-        embed = discord.Embed(
-            title="Banned Urls",
-            description=format_data
-        )
-        await ctx.send(embed=embed)
-
-    @commands.command(name='mute')
-    #@commands.has_role("@Ari Global Mod")
-    async def MuteUser(self, ctx, id : int,reason:str):
-        user = await self.bot.fetch_user(id)
-        channel = ctx.guild.get_channel(self.controlChannel)
-        
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        
-        if user.bot or not user:
-            await ctx.send(embed=discord.Embed( description=" No User Found"))
-            return
-        
-        data = {
-            "id": user.id,
-            "name" : user.name,
-            "reason": reason,
-            "mutedBy" : ctx.message.author.name
-        }
-        await self.muted_repository.create(data)
-        self.muted_users.append(data)
-        await ctx.send(embed=discord.Embed( description=f" User {user.id} ({user.name}) has been muted"))
-    
-    @commands.command(name='delete_message')
-    async def delete_message_by_mods(self, ctx, message_id, lobby_name):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        announce = await ctx.send(embed = Embed(description="Finding the Message in the cache"))
-        source_data = self.find_source_data(int(message_id), lobby_name)
-        if source_data:
-            combined_ids = [{"channel": source_data["channel"], "messageId": source_data["source"]}]
-            combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message_id)
-        else:
-            await ctx.send(embed=Embed(description=f"**Unknown ID {message_id}**\n\n"
-                                       "If this message has been out there for more than 5 minutes, I will be unable to delete the message."))
-            return
-        await announce.edit(embed= Embed(description="Commencing the deletion of the message"))
-        async with aiohttp.ClientSession() as session:
-            tasks = []
-            async def update_loading_message():
-                loading_stages = ["Deleting message.", "Deleting message..", "Deleting message..."]
-                stage_index = 0
-                while not all_tasks_done.is_set():
-                    await announce.edit(embed=Embed(description=loading_stages[stage_index]))
-                    stage_index = (stage_index + 1) % len(loading_stages)
-                    await asyncio.sleep(1)
-
-            all_tasks_done = asyncio.Event()
-            update_task = asyncio.create_task(update_loading_message())
-            try:
-                for document in self.guild_data:
-                    for channel in document["channels"]:
-                        if channel["lobby_name"] == lobby_name:
-                            webhook  = Webhook.from_url(channel["webhook"], session=session)
-                            message = await self.find_messageID(channel["channel_id"],combined_ids)
-                            tasks.append( self.process_delete_message_by_mods(webhook,message.id,channel["channel_id"]))
-                await asyncio.gather(*tasks)
-            finally:
-                all_tasks_done.set()
-                await update_task
-            await announce.edit(embed = Embed(description=f"Message with the ID {message_id} has been deleted"))
-    async def process_delete_message_by_mods(self,webhook,message_id,channel):
-        try:
-            await webhook.edit_message(
-                message_id,
-                content = "*[message deleted by moderator]*",
-            )
-        except Exception as e:
-            try:
-                channel = self.bot.get_channel(channel)
-                message = await channel.fetch_message(message_id)
-                if message:
-                    await message.delete()
-                    await message.author.send(
-                        embed=Embed(
-                            description= (
-                            "Your message has been deleted by the moderator."
-                            " Please be mindful of what you send.\n\n "
-                            f"Content: {message.content}")))                        
-            except:
-                log.warning(" Failed to delete message ")
-            
-    @commands.command(name='unmute')
-    #@commands.has_role("@Ari Global Mod")
-    async def UnMuteUser(self, ctx, id: int):
-        user = await self.bot.fetch_user(id)
-        channel = ctx.guild.get_channel(self.controlChannel)
-        exists = await self.muted_repository.findOne(id)
-
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        
-        if user.bot or not user or not exists:
-            await ctx.send(embed=discord.Embed( description=" No User Found"))
-            return
-        
-          
-        sender = self.bot.get_user(id) 
-        await self.muted_repository.delete(user.id)
-        self.muted_users.remove(exists)
-        await sender.send(embed=discord.Embed(description=f"You have been unmuted from Global Chat!\n\n Welcome back! try to not get reported again"))
-        await ctx.send(embed=discord.Embed( description=f" User {user.id} ({user.name}) has been unmuted"))
-          
     @commands.hybrid_command(name='add_lobby')
     @commands.is_owner()
     async def AddLobbies(self, ctx, name:str, description: str ,limit:int):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return  
+        allowed = self.ValidateUser(ctx.author.id)
+
+        if not allowed:
+            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
+            return
         
         if self.server_lobbies:
             for x in self.server_lobbies:
@@ -1635,66 +1802,8 @@ class OpenWorldServer(commands.Cog):
         await self.lobby_repository.create(data)
         self.server_lobbies.append(data)
         await ctx.send(embed=discord.Embed( description=f" Lobby {name} has been newly added"))
-    
-    @commands.command(name='add_badlink')
-    #@commands.is_owner()
-    async def AddblockLinks(self, ctx, content):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        self.malicious_urls.append(content)
-        await self.malicious_urls_repository.create(content)
-        await ctx.send(embed = discord.Embed(
-            description= f"Content has been added to list"
-        ))
-    
-    @commands.command(name='remove_links')
-    async def RemoveBlockLinks(self, ctx, content):
-        channel = ctx.guild.get_channel(self.controlChannel)
-       
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
+        await self.log_mod("add_lobby",data,ctx.message.author.id)
 
-        exists = await self.malicious_urls_repository.findOne(content)
- 
-        if exists:
-            await self.muted_repository.delete(exists["content"])
-            self.malicious_urls.remove(exists)
-            await ctx.send(embed=discord.Embed( description=f" {exists["content"]} has been removed to the list"))
-        else:    
-            await ctx.send(embed=discord.Embed( description=f"{content}not found in the list"))
-
-    @commands.command(name='add_badwords')
-    #@commands.is_owner()
-    async def Addblockwords(self,ctx, content):
-        channel = ctx.guild.get_channel(self.controlChannel)
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        self.malicious_words.append(content)
-        await self.malicious_words_repository.create(content)
-        await ctx.send(embed = discord.Embed(
-            description= f"Content has been added to list"
-        ))
-    
-    @commands.command(name='remove_badwords')
-    async def RemoveBlockWorlds(self, ctx, content):
-        channel = ctx.guild.get_channel(self.controlChannel)
-
-        if ctx.channel.id != self.controlChannel:
-            await ctx.send(embed=discord.Embed( description=f" Not the moderation Channel #{channel}"))
-            return
-        
-        exists = await self.malicious_words_repository.findOne(content)
- 
-        if exists:
-            await self.muted_repository.delete(exists["content"])
-            self.malicious_words.remove(exists)
-            await ctx.send(embed=discord.Embed( description=f" {exists["content"]} has been removed to the list"))
-        else:    
-            await ctx.send(embed=discord.Embed( description=f"{content}not found in the list"))
 
     # TODO: Create a app report or maybe improve
     @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
@@ -1705,6 +1814,19 @@ class OpenWorldServer(commands.Cog):
         await ctx.send(embed=discord.Embed(description=f"User has been reported"))
         await self.log_report_by_user(username,ctx.author.name,reason,attacment)
 
+
+    async def log_mod(self, action, data, user_id):
+        
+        guild = self.bot.get_guild(939025934483357766)
+        target_channel = guild.get_channel(1246023682481197056)
+
+        user = await self.bot.fetch_user(user_id)
+        embed =discord.Embed(
+            title=f"{action} Command",
+            description=(f"```{data}```")
+        )
+        embed.set_footer(text=f"{user.global_name}", icon_url=user.avatar.url)        
+        await target_channel.send(embed=embed)
     async def log_report_by_user(self,name,reportedBy, reason, attachments):
         guild = self.bot.get_guild(939025934483357766)
         target_channel = guild.get_channel(975254983559766086)
