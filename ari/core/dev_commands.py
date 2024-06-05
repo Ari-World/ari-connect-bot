@@ -17,5 +17,13 @@ class Dev(commands.Cog):
     These commands come loaded with every Red bot, and cover some of the most basic usage of the bot.
     """
     
-    def __init__(self) -> None:
+    def __init__(self, bot) -> None:
+        self.bot = bot
         super().__init__()
+
+    @commands.command()
+    async def ping(self, ctx):
+        """Shows the bot's latency."""
+        latency = self.bot.latency  # Bot latency in seconds
+        latency_ms = round(latency * 1000)  # Convert to milliseconds
+        await ctx.send(f'Pong! 🏓 Latency is {latency_ms}ms')

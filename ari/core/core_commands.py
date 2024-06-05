@@ -23,12 +23,6 @@ class CoreLogic:
 @i18n.cog_i18n(_)
 class Core(commands.Cog,CoreLogic):
    
-    @commands.command(hidden=True)
-    async def ping(self, ctx: commands.Context):
-        """Pong."""
-        await ctx.send("Pong.")
-
-
   
     @commands.command()
     async def uptime(self, ctx: commands.Context):

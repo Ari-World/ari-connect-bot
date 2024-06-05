@@ -15,6 +15,7 @@ from .core_commands import Core
 from .dev_commands import Dev
 from ._events import init_events
 from .cog_manager import CogManager
+from .cogs.global_chat.global_chat import GlobalChat
 
 from core._cli import ExitCodes
 from ._driver._mongo import StaticDatabase
@@ -54,21 +55,24 @@ class Ari(commands.Bot):
         """
         This should only be run once, prior to connecting to Discord gateway.
         """
+
         await self.add_cog(Core(self))
-        await self.add_cog(Dev())
-        log.info("Loading cogs")
-        try:
-            cogs_specs = await self._cog_mngr.find_cogs()
-            for spec in cogs_specs:
-                try:
-                    await asyncio.wait_for(self.load_extension(spec.name), 30)
-                    log.info(f"Added {spec.name}")
-                except asyncio.TimeoutError:
-                    log.exception("Failed to load package %s (timeout)", spec.name)
-                except Exception as e:
-                    log.exception("Failed to load package %s", spec.name, exc_info=e)
-        except RuntimeError as e:
-            log.error("Error finding core cogs: %s", e)
+        await self.add_cog(Dev(self))
+        await self.add_cog(GlobalChat(self))
+
+        # log.info("Loading cogs")
+        # try:
+        #     cogs_specs = await self._cog_mngr.find_cogs()
+        #     for spec in cogs_specs:
+        #         try:
+        #             await asyncio.wait_for(self.load_extension(spec.name), 30)
+        #             log.info(f"Added {spec.name}")
+        #         except asyncio.TimeoutError:
+        #             log.exception("Failed to load package %s (timeout)", spec.name)
+        #         except Exception as e:
+        #             log.exception("Failed to load package %s", spec.name, exc_info=e)
+        # except RuntimeError as e:
+        #     log.error("Error finding core cogs: %s", e)
 
     
     async def close(self):
