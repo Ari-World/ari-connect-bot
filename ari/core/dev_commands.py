@@ -21,9 +21,4 @@ class Dev(commands.Cog):
         self.bot = bot
         super().__init__()
 
-    @commands.command()
-    async def ping(self, ctx):
-        """Shows the bot's latency."""
-        latency = self.bot.latency  # Bot latency in seconds
-        latency_ms = round(latency * 1000)  # Convert to milliseconds
-        await ctx.send(f'Pong! 🏓 Latency is {latency_ms}ms')
+    

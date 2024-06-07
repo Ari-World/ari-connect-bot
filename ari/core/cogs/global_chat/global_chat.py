@@ -3,7 +3,7 @@
 from discord.ext import commands
 
 from .global_chat_cache_manager import CacheManager
-from .global_chat_commands import BotCommands
+from .global_chat_commands import Global
 from .global_chat_initialization import Intialization
 from .global_chat_moderation import Moderation
 from .global_chat_repository import Repository
@@ -44,6 +44,6 @@ class GlobalChat(commands.Cog):
         log.info("Open world is ready")
 
     async def pre_load_cog(self):
-        await self.bot.add_cog(BotCommands(self.bot, self.init, self.repos))
+        await self.bot.add_cog(Global(self.bot, self.init, self.repos))
         await self.bot.add_cog(Moderation(self.bot, self.repos, self.init,self.cache_manager))
         await self.bot.add_cog(EventListeners(self.bot, self.init, self.cache_manager))

@@ -1,16 +1,17 @@
 import asyncio
+import aiohttp
 import discord
 from discord.ext import commands
-from discord import Embed
+from discord import Embed, Webhook
 
-class BotCommands(commands.Cog):
-    def __init__(self, bot, initialization, repositories):
+class Global(commands.Cog):
+    def __init__(self, bot : commands.Bot, initialization, repositories):
         self.bot = bot
         self.init = initialization
         self.repos = repositories
 
 
-             
+    # TODO: Improve Connect
     @commands.hybrid_command(name='connect', description='Link to Open World')
     async def openworldlink(self, ctx, channel: discord.TextChannel):
 
@@ -108,10 +109,11 @@ class BotCommands(commands.Cog):
 
             lobbyData = await self.init.getAllLobby()
             
-            limit = None  # Define limit variable
-            for data in self.server_lobbies:
-                limit = data.get("limit")  # Use .get() to avoid KeyError if "limit" is not present
-                if limit is not None:
+            limit = None  
+            for data in self.init.server_lobbies:
+                
+                if data["lobbyname"] == lobby:
+                    limit = data.get("limit")  # Use .get() to avoid KeyError if "limit" is not present
                     break
             
             if limit is not None:  # Proceed only if limit is found
@@ -121,6 +123,7 @@ class BotCommands(commands.Cog):
                         break
 
             return {'message': message, 'message_data':sent_message} 
+        
         async def Login(guild_id, sent_message):  
             # Logging in process
             embed = Embed(
@@ -180,6 +183,8 @@ class BotCommands(commands.Cog):
             response = isFailed(await Login(guild_id, responseWithlobby['message_data']))
             
             response = isFailed(await CreateConnection(responseWithlobby['lobby'], response['message_data'], guild_name))
+            await self.on_join_announce(ctx,guild_name, responseWithlobby['lobby'])
+
         # ======================================================================================
         # Runtime Manager
 
@@ -214,6 +219,28 @@ class BotCommands(commands.Cog):
                     color= 0xFF0000)
                     )
     
+    async def on_join_announce(self, ctx, guild_name, lobbyname):
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+
+            for document in self.init.guild_data:
+                channels = document["channels"]
+                for channel in channels:
+                    if channel["channel_id"] != ctx.message.channel.id and lobbyname == channel["lobby_name"]:
+                        webhook = Webhook.from_url(channel["webhook"], session=session)
+                        embed = Embed(description=f"**{guild_name}** has joined the chat", color= 0xEB459F)
+                        
+                        tasks.append(
+                            webhook.send(
+                                avatar_url= self.bot.user.avatar.url,
+                                username=self.bot.user.name,
+                                embed=embed,
+                                wait=True  
+                            )
+                        )
+
+            await asyncio.gather(*tasks)
+                        
     #Get Current Lobby
     @commands.hybrid_command(name='current', description='Current Lobby description')
     async def current_lobby(self, ctx):

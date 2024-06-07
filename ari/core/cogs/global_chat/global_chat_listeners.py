@@ -168,6 +168,7 @@ class EventListeners(commands.Cog):
 
                         if messageType == MessageTypes.SEND:
                             tasks.append(self.process_message(webhook,  message, messagesData))
+                            
                         elif messageType == MessageTypes.REPLY: # Remove and combined_ids
                             # Reply Jump message
                             # view = await self.handle_reply(combined_ids, channel["channel_id"] )
