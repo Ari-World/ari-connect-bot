@@ -21,7 +21,7 @@ class BotCommands(commands.Cog):
                 color=0x7289DA 
             )
             sent_message = await ctx.send(embed=embed)
-            existing_guild = self.find_guild(guild_id, channel_id)
+            existing_guild = self.init.find_guild(guild_id, channel_id)
             if existing_guild:
                 embed = Embed(
                     title=":no_entry: Your channel is already registered for Open World Chat",
@@ -154,7 +154,7 @@ class BotCommands(commands.Cog):
             # sends a successful message
             embed = Embed(
                 title="Thank you for linking with Open World Server!",
-                description= self.openworldThanksMessage,
+                description= self.init.openworldThanksMessage,
                 color=0x00FF00 
             )
             message = await ctx.send(embed=embed)
@@ -326,7 +326,7 @@ class BotCommands(commands.Cog):
             
             async def SelectLobby():
                 message = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
-                lobby = ConnectDropDown(ctx.message.author,self.server_lobbies)
+                lobby = ConnectDropDown(ctx.message.author,self.init.server_lobbies)
                 message_drop = await ctx.send(view=lobby)
                 try:
                     await asyncio.wait_for(lobby.wait(), timeout=60)
@@ -418,12 +418,16 @@ class BotCommands(commands.Cog):
         # Sequence
         await Sequence(guild_id,channel_id)
 
+    @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
+    async def report_user(self, ctx,username, reason, attacment:discord.Attachment):
+        if not attacment:
+            await ctx.send(embed=discord.Embed(description=f"Please provide a picture"))
+
+        await ctx.send(embed=discord.Embed(description=f"User has been reported"))
+        await self.init.log_report_by_user(username,ctx.author.name,reason,attacment)
 
 
 ## View
-
-
-
 class LobbyDropDown(discord.ui.Select):
     def __init__(self,server_lobbies,author, on_item_added):
         self.server_lobbies = server_lobbies

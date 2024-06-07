@@ -6,16 +6,18 @@ import re
 
 from discord import Embed
 import discord
+from discord.ext import commands
 
 from .global_chat_listeners import MessageTypes
+
+from ...data_mananger import *
 
 log = logging.getLogger("globalchat.init")
 
 class Intialization:
-    def __init__(self,bot):
+    def __init__(self,bot : commands.Bot):
         self.bot = bot
         self.bypass_delete_listener = set()
-
         # TODO: Move this somewhere maybe as a json file
         self.openworldThanksMessage = ("Thanks for connecting to the Open World Server! \n\n"+
         "**Remember to:** \n" +
@@ -24,8 +26,19 @@ class Intialization:
         "> Follow our community guidelines.\n" +
         "> No NSFW or Lewd content\n"+
         "> Keep the chats Family Friendly and Clean\n\n"
-        "If you see anyone breaking the rules, use ` /report ` and our global mods will take care of it!\n\n"
-        "- Once the message is sent, it cannot delete be deleted from other servers. Please be mindful of what you send")
+        "If you see anyone breaking the rules, use ` /report ` and our global mods will take care of it!\n\n")
+
+        self.prepareLogging()
+
+    def prepareLogging(self):
+        log.info("Preparing Logging IDs")
+
+        self.guild_logging_id = getLoggingGuildID()
+        self.general_logging_id = getGeneralLogChannelID()
+        self.chat_logging_id = getChatLogChannelID()
+        self.system_logging_id = getSystemLobChannelID()
+        self.mod_logging_id = getModLogChannelID()
+        self.player_report_logging_id = getPlayerReportLogChannelID()
 
     async def load_data(
             self,
@@ -178,10 +191,10 @@ class Intialization:
     # ======================================================================================
     #  Log Report functions
     # ======================================================================================
-
+    #  System Log report
     async def log_report(self,message,reason):
-        guild = self.bot.get_guild(939025934483357766)
-        target_channel = guild.get_channel(1230069779071762473)
+        guild = self.bot.get_guild(self.guild_logging_id)
+        target_channel = guild.get_channel(self.system_logging_id)
 
         embed = Embed(
             title="Detected by system",
@@ -191,7 +204,7 @@ class Intialization:
         await target_channel.send(embed=embed)
 
     
-    
+    #  Chat Log report
     async def chat_log_report(
             self,message : discord.Message, 
             messageType, 
@@ -199,9 +212,8 @@ class Intialization:
             channel_id,
             message2 : discord.Message = None):
         channel = await self.bot.fetch_channel(channel_id)
-        guild = self.bot.get_guild(939025934483357766)
-        target_channel = guild.get_channel(1245210465919827979)
-        
+        guild = self.bot.get_guild(int(self.guild_logging_id))
+        target_channel = guild.get_channel(int(self.chat_logging_id))
             
         if messageType == MessageTypes.DELETE:
             embed = Embed(
@@ -225,3 +237,35 @@ class Intialization:
             embed.set_footer(text = f"userid {message.author.id} || message ID {message2.id}")
             await target_channel.send(embed = embed)
     
+    async def log_mod(self, action, data, user_id):
+        
+        guild = self.bot.get_guild(int(self.guild_logging_id))
+        target_channel = guild.get_channel(int(self.mod_logging_id))
+
+        user = await self.bot.fetch_user(user_id)
+        embed =discord.Embed(
+            title=f"{action} Command",
+            description=(f"```{data}```")
+        )
+        embed.set_footer(text=f"{user.global_name}", icon_url=user.avatar.url)        
+        await target_channel.send(embed=embed)
+
+    async def log_report_by_user(self,name,reportedBy, reason, attachments):
+        guild = self.bot.get_guild(int(self.guild_logging_id))
+        target_channel = guild.get_channel(int(self.player_report_logging_id))
+            
+
+        embed = discord.Embed(
+            title="Reported",
+            description= (f"**User {name} has reported**\n"
+                          f"Reason: {reason}")
+        )
+        embed.set_footer(text = f"reported by {reportedBy}")
+        
+        if not isinstance(attachments, list):
+           attachments = [attachments]
+
+        for index, attachment in enumerate(attachments, start=1):
+            embed.add_field(name=f"Proof {index}", value=attachment.url)
+        
+        await target_channel.send(embed=embed)

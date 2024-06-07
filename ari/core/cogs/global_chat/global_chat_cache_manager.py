@@ -4,6 +4,7 @@ import asyncio
 
 import logging
 
+from ...data_mananger import getCacheThreshold
 
 log = logging.getLogger("globalchat.cache_manager")
 
@@ -11,7 +12,7 @@ log = logging.getLogger("globalchat.cache_manager")
 class CacheManager:
     def __init__(self):
         self.cacheMessages = []
-        self.deleteMessageThreshold = 3600
+        self.deleteMessageThreshold = int(getCacheThreshold())
 
         log.info("Caching Manager Ready")
 

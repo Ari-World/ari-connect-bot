@@ -254,15 +254,10 @@ class Moderation(commands.Cog):
             "message_id":message_id, 
             "lobby_name":matched_data["lobby_name"],
         }
-        self.init.bypass_delete_listener.add(message_id)
 
-        # TODO: After deleting all related message send now delete the original
-        try:
-            await self.handle_delete_by_command(message_id, matched_data["lobby_name"], ctx)  
-        finally:
-            self.init.bypass_delete_listener.remove(message_id)
+        await self.handle_delete_by_command(message_id, matched_data["lobby_name"], ctx)  
 
-        await self.log_mod("Delete", data, ctx.message.author.id)
+        await self.init.log_mod("Delete", data, ctx.message.author.id)
 
 
     async def handle_delete_by_command(self, message_id, lobby_name, ctx):
@@ -305,7 +300,7 @@ class Moderation(commands.Cog):
                 await update_task
             await announce.edit(embed = Embed(description=f"Message with the ID {message_id} has been deleted"))
 
-    async def process_delete_message_by_mods(self,webhook,message_id,channel):
+    async def process_delete_message_by_mods(self ,webhook ,message_id,channel):
         try:
             await webhook.edit_message(
                 message_id,
@@ -315,18 +310,44 @@ class Moderation(commands.Cog):
             )
         except Exception as e:
             try:
-                channel = self.bot.get_channel(channel)
-                message = await channel.fetch_message(message_id)
-                if message:
-                    await message.edit("*[message deleted by moderator]*")
-                    await message.author.send(
-                        embed=Embed(
-                            description= (
-                            "Your message has been deleted by the moderator."
-                            " Please be mindful of what you send.\n\n "
-                            f"Content: {message.content}")))                        
-            except:
-                log.warning(" Failed to delete message ")
+                self.init.bypass_delete_listener.add(message_id)
+
+                sourceChannel = self.bot.get_channel(int(channel))
+                message = await sourceChannel.fetch_message(message_id)
+
+                if message is None:
+                    log.error(f"Message with ID {message_id} not found in channel {channel}")
+                    return
+            
+                try:
+                    await message.delete()
+                    description = (
+                    "Your message has been deleted by the moderator."
+                    " Please be mindful of what you send.\n\n"
+                    f"Content: {message.content}"
+                    )
+
+                    # Handle attachments
+                    if message.attachments:
+                        attachment_urls = "\n".join([attachment.url for attachment in message.attachments])
+                        description += f"\n\nAttachments:\n{attachment_urls}"
+
+                    embed = Embed(description=description)
+                
+                    # Set the first attachment as the embed image if it exists
+                    if message.attachments:
+                        embed.set_image(url=message.attachments[0].url)
+
+                    await message.author.send(embed=embed)
+                except Exception as edit_e:
+                    log.error(f"Failed to edit the message: {edit_e}")
+                    if hasattr(edit_e, 'code'):
+                        log.error(f"Discord API Error Code: {edit_e.code}")
+                finally:
+                    self.init.bypass_delete_listener.remove(message_id)
+     
+            except Exception as inner_e:
+                    log.warning(f"Failed to fetch or edit message: {inner_e}")
     
     # Chat Moderation Commands
     @commands.hybrid_command(name='mute', description ="Reply to a user to mute them or use the user_id")
@@ -358,7 +379,7 @@ class Moderation(commands.Cog):
         else:
             guild_id = ctx.message.guild.id
             channel_id = ctx.message.channel.id
-            guild_document = self.find_guild(guild_id, channel_id)
+            guild_document = self.init.find_guild(guild_id, channel_id)
 
             for channel in guild_document["channels"]:
                 if channel["channel_id"] == channel_id:
@@ -381,7 +402,7 @@ class Moderation(commands.Cog):
         await self.repos.muted_repository.create(data)
         self.init.muted_users.append(data)
         await ctx.send(embed=Embed( description=f" User {user.id} ({user.name}) has been muted"))
-        await self.log_mod("Mute",data,ctx.message.author.id)
+        await self.init.log_mod("Mute",data,ctx.message.author.id)
 
     @commands.hybrid_command(name='unmute')
     #@commands.has_role("@Ari Global Mod")
@@ -394,7 +415,7 @@ class Moderation(commands.Cog):
             return
         
         exists = None
-        for data in self.muted_users:
+        for data in self.init.muted_users:
             if data["id"] == id:
                 exists = data
         
@@ -408,7 +429,7 @@ class Moderation(commands.Cog):
         self.init.muted_users.remove(exists)
         await sender.send(embed=Embed(description=f"You have been unmuted from Global Chat!\n\n Welcome back! try to not get reported again"))
         await ctx.send(embed=Embed( description=f" User {exists["id"]} ({exists["name"]}) has been unmuted"))
-        await self.log_mod("Unmute",exists,ctx.message.author.id)
+        await self.init.log_mod("Unmute",exists,ctx.message.author.id)
 
     @commands.hybrid_command(name='add_badlink')
     async def AddblockLinks(self, ctx, content):
@@ -423,7 +444,7 @@ class Moderation(commands.Cog):
         await ctx.send(embed = Embed(
             description= f"Content has been added to list"
         ))
-        await self.log_mod("add_badlink",content,ctx.message.author.id)
+        await self.init.log_mod("add_badlink",content,ctx.message.author.id)
     
     @commands.hybrid_command(name='remove_links')
     async def RemoveBlockLinks(self, ctx, content):
@@ -433,13 +454,13 @@ class Moderation(commands.Cog):
             await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
             return
 
-        exists = await self.malicious_urls_repository.findOne(content)
+        exists = await self.repos.malicious_urls_repository.findOne(content)
  
         if exists:
             await self.repos.muted_repository.delete(exists["content"])
             self.init.malicious_urls.remove(exists)
             await ctx.send(embed=Embed( description=f" {exists["content"]} has been removed to the list"))
-            await self.log_mod("remove_links",exists,ctx.message.author.id)
+            await self.init.log_mod("remove_links",exists,ctx.message.author.id)
         else:    
             await ctx.send(embed=Embed( description=f"{content}not found in the list"))
 
@@ -456,7 +477,7 @@ class Moderation(commands.Cog):
         await ctx.send(embed = Embed(
             description= f"Content has been added to list"
         ))
-        await self.log_mod("add_badwords",content,ctx.message.author.id)
+        await self.init.log_mod("add_badwords",content,ctx.message.author.id)
 
     
     @commands.hybrid_command(name='remove_badwords')
@@ -473,7 +494,7 @@ class Moderation(commands.Cog):
             await self.repos.muted_repository.delete(exists["content"])
             self.init.malicious_words.remove(exists)
             await ctx.send(embed=Embed( description=f" {exists["content"]} has been removed to the list"))
-            await self.log_mod("remove_badwords",exists,ctx.message.author.id)
+            await self.init.log_mod("remove_badwords",exists,ctx.message.author.id)
         else:    
             await ctx.send(embed=Embed( description=f"{content}not found in the list"))
 
@@ -515,7 +536,7 @@ class Moderation(commands.Cog):
         
         if result:
             await ctx.send(embed=discord.Embed(description="Role assigned successfully."))
-            await self.log_mod("assign_role",role,ctx.message.author.id)
+            await self.init.log_mod("assign_role",role,ctx.message.author.id)
         else:
             await ctx.send(embed=discord.Embed(description="Role assignment failed."))
 
@@ -539,7 +560,7 @@ class Moderation(commands.Cog):
 
         if result:
             await ctx.send(embed=discord.Embed(description="Role creation successfully."))
-            await self.log_mod("create_role",role,ctx.message.author.id)
+            await self.init.log_mod("create_role",role,ctx.message.author.id)
         else:
             await ctx.send(embed=discord.Embed(description="Role creation failed."))
     
@@ -565,7 +586,7 @@ class Moderation(commands.Cog):
 
         if result:
             await ctx.send(embed=discord.Embed(description="Role deletion successfully."))
-            await self.log_mod("remove_role",modData,ctx.message.author.id)
+            await self.init.log_mod("remove_role",modData,ctx.message.author.id)
         else:
             await ctx.send(embed=discord.Embed(description="Role deletion failed."))
         
@@ -592,48 +613,5 @@ class Moderation(commands.Cog):
         await self.repos.lobby_repository.create(data)
         self.init.server_lobbies.append(data)
         await ctx.send(embed=discord.Embed( description=f" Lobby {name} has been newly added"))
-        await self.log_mod("add_lobby",data,ctx.message.author.id)
-
-
-    # TODO: Create a app report or maybe improve
-    @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
-    async def report_user(self, ctx,username, reason, attacment:discord.Attachment):
-        if not attacment:
-            await ctx.send(embed=discord.Embed(description=f"Please provide a picture"))
-
-        await ctx.send(embed=discord.Embed(description=f"User has been reported"))
-        await self.log_report_by_user(username,ctx.author.name,reason,attacment)
-
-
-    async def log_mod(self, action, data, user_id):
-        
-        guild = self.bot.get_guild(939025934483357766)
-        target_channel = guild.get_channel(1246023682481197056)
-
-        user = await self.bot.fetch_user(user_id)
-        embed =discord.Embed(
-            title=f"{action} Command",
-            description=(f"```{data}```")
-        )
-        embed.set_footer(text=f"{user.global_name}", icon_url=user.avatar.url)        
-        await target_channel.send(embed=embed)
-
-    async def log_report_by_user(self,name,reportedBy, reason, attachments):
-        guild = self.bot.get_guild(939025934483357766)
-        target_channel = guild.get_channel(975254983559766086)
-
-        embed = discord.Embed(
-            title="Reported",
-            description= (f"**User {name} has reported**\n"
-                          f"Reason: {reason}")
-        )
-        embed.set_footer(text = f"reported by {reportedBy}")
-        
-        if not isinstance(attachments, list):
-           attachments = [attachments]
-
-        for index, attachment in enumerate(attachments, start=1):
-            embed.add_field(name=f"Proof {index}", value=attachment.url)
-        
-        await target_channel.send(embed=embed)
+        await self.init.log_mod("add_lobby",data,ctx.message.author.id)
 

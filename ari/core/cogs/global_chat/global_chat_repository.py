@@ -2,11 +2,13 @@
 import logging
 
 import discord 
-
+from discord.ext import commands
 log = logging.getLogger("globalchat.repository")
 
 class Repository:
-    def __init__(self, db):
+    def __init__(self, bot:commands.Cog ,initialization, db):
+        self.bot = bot
+        self.init = initialization
         self.guild_repository = GuildRepository(db)
         self.muted_repository = MutedRepository(db)
         self.lobby_repository = LobbyRepository(db)
@@ -32,7 +34,7 @@ class Repository:
 
         channel_id = channel.id  
         guild_document = None
-        for guild in self.guild_data:  
+        for guild in self.init.guild_data:  
             if guild["server_id"] == guild_id:  
                 guild_document = guild
         
@@ -50,7 +52,7 @@ class Repository:
             })
            
             if update_successful:
-                for guild in self.guild_data:
+                for guild in self.init.guild_data:
                     if guild["server_id"] == guild_id:
                         guild["channels"] = channels
                         for channel in guild["channels"]:
@@ -68,7 +70,7 @@ class Repository:
 
             if insertion_successful:
                 # Add the new guild to the cache only if the database insertion was successful
-                self.guild_data.append({
+                self.init.guild_data.append({
                     "server_id": guild_id,
                     "server_name": server_name,
                     "channels": [{"channel_id": channel_id, "lobby_name": lobby_name, "webhook": webhook.url, "activity": False}],
@@ -78,7 +80,7 @@ class Repository:
 
     async def update_guild_lobby(self, guild_id: int, channel_id: int, lobby_name: str):
         guild_document = None
-        for guild in self.guild_data:  
+        for guild in self.init.guild_data:  
             if guild["server_id"] == guild_id:  
                 guild_document = guild
         if guild_document:
@@ -95,7 +97,7 @@ class Repository:
             })
            
             if update_successful:
-                for guild in self.guild_data:
+                for guild in self.init.guild_data:
                     if guild["server_id"] == guild_id:
                         guild["channels"] = channels
                         for channel in guild["channels"]:
@@ -105,7 +107,7 @@ class Repository:
     async def delete_guild_document(self, guild_id: int, channel_id: int):
        
         guild_document = None
-        for guild in self.guild_data:  
+        for guild in self.init.guild_data:  
             if guild["server_id"] == guild_id:  
                 guild_document = guild
         # If data exists
@@ -137,7 +139,7 @@ class Repository:
                     })
                 
                     if update_successful:
-                        for guild in self.guild_data:
+                        for guild in self.init.guild_data:
                             if guild["server_id"] == guild_id:
                                 guild["channels"] = channels
                                 for channel in guild["channels"]:
@@ -148,12 +150,12 @@ class Repository:
                     # Otherwise, delete the guild document
                     result = await self.guild_repository.delete({"server_id": guild_id})
                     if result:
-                        self.guild_data = [guild for guild in self.guild_data if guild["server_id"] != guild_id]
+                        self.init.guild_data = [guild for guild in self.init.guild_data if guild["server_id"] != guild_id]
     
     async def create_moderator_role(self,role,level):
         
         role_data = None
-        for data in self.moderator:
+        for data in self.init.moderator:
             if data["level"] == level:
                 role_data = data
 
@@ -176,7 +178,7 @@ class Repository:
                  })
             
             if update_successfull:
-                for mod in self.moderator:
+                for mod in self.init.moderator:
                     if mod["level"] == level:
                         mod["mods"] = mods
                         return True
@@ -189,7 +191,7 @@ class Repository:
             })
 
             if insertion_successfull:
-                self.moderator.append({
+                self.init.moderator.append({
                     "role_name" : role["role_name"],
                     "icon": role["icon"],
                     "level": role["level"],
@@ -211,7 +213,7 @@ class Repository:
             })
             
             if update_successful:
-                for data in self.moderator:
+                for data in self.init.moderator:
                     if data["level"] == modData["level"]:
                         data["mods"] = mods
                         return True

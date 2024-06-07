@@ -55,9 +55,11 @@ class Ari(commands.Bot):
         """
         This should only be run once, prior to connecting to Discord gateway.
         """
-
+        log.info("Preparing Core Commands")
         await self.add_cog(Core(self))
+        log.info("Preparing Dev Commands")
         await self.add_cog(Dev(self))
+        log.info("Preparing Global chat feature")
         await self.add_cog(GlobalChat(self))
 
         # log.info("Loading cogs")

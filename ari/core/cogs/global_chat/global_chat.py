@@ -22,7 +22,7 @@ class GlobalChat(commands.Cog):
         self.bot = bot
 
         self.init = Intialization(bot)
-        self.repos = Repository(bot.db)
+        self.repos = Repository(bot,self.init, bot.db)
         self.cache_manager = CacheManager()
 
     async def cog_load(self):
