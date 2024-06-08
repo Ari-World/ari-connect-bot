@@ -1,8 +1,12 @@
 import asyncio
+import logging
 import aiohttp
 import discord
 from discord.ext import commands
 from discord import Embed, Webhook
+
+
+log = logging.getLogger("globalchat.commands")
 
 class Global(commands.Cog):
     def __init__(self, bot : commands.Bot, initialization, repositories):
@@ -14,186 +18,148 @@ class Global(commands.Cog):
     # TODO: Improve Connect
     @commands.hybrid_command(name='connect', description='Link to Open World')
     async def openworldlink(self, ctx, channel: discord.TextChannel):
-
-        # ======================================================================================
-        async def Validation(guild_id,channel_id):
-            embed = Embed(
-                description="Preparing ...",
-                color=0x7289DA 
-            )
-            sent_message = await ctx.send(embed=embed)
-            existing_guild = self.init.find_guild(guild_id, channel_id)
-            if existing_guild:
-                embed = Embed(
-                    title=":no_entry: Your channel is already registered for Open World Chat",
-                    description="Type `a!unlink` to unlink your Open World\n*This will only unlink from the Open World channel*",
-                    color=0xFF0000  # Red color
-                )
-                await sent_message.edit(embed=embed)
-                return {'message':'Failed', 'message_data':sent_message, 'server_name':None}
-            else:
-                return {'message':'Success', 'message_data':sent_message, 'server_name':existing_guild}
         
-        async def SelectLobbies(guild_id,sent_message):
-            # Getting lobbies and selecting available lobbies
-            # ======================================================================================
-            # Issue: handle the issue of user selecting the full lobbies
-            # ======================================================================================
-            async def SelectLobby():
-                message = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
-                lobby =ConnectDropDown(ctx.message.author,self.init.server_lobbies)
-                
-                message_drp = await ctx.send(view=lobby)
-                try:
-                    await asyncio.wait_for(lobby.wait(), timeout=60)
-                except asyncio.TimeoutError:
-                    await ctx.send("You didn't respond within the specified time.")
-                    await message.delete()
-                    await message_drp.delete()
-                    raise Exception("")
-                
-                await message.delete()
-                await message_drp.delete()
-                return lobby.lobby
-
-            async def AboutLobby(about):
-                for lobby in self.init.server_lobbies:
-                    if lobby["lobbyname"] == about:
-                        description = lobby["description"]
-                # This is a duplicate from current_lobby command
-                guilds = self.init.getAllGuildUnderLobby(about)
-                data = ""
-                x = 1
-                if guilds:
-                    for guild in guilds:
-                        text = f"**{x}**) **{guild['server_name']}**"
-                        data += text + "\n\n"
-                        x += 1
-                else:
-                    data = "There's no guild connected to this lobby"
-                choice = Choice(ctx.message.author)
-
-                embed = Embed(
-                    title= about,
-                    description=description,
-                    color=0x7289DA
-                )
-
-                
-                embed.add_field(name="Guilds",value=data)
-                await sent_message.edit(embed = embed)
-                msg_choice = await ctx.send(view=choice)
-                
-                try:
-                    await asyncio.wait_for(choice.wait(), timeout=60)
-                except asyncio.TimeoutError:
-                    await ctx.send("You didn't respond within the specified time.")
-                    await msg_choice.delete()
-                    await sent_message.delete()
-                    raise Exception("")
-                
-                await msg_choice.delete()
-                return choice.value
-            
-            # ======================================================================================
-            # Menu Manager
-            
-            while True:
-                lobby = await SelectLobby()
-                choice = await AboutLobby(lobby)
-               
-                if choice is True:
-                    return {'message':'Success', 'message_data':sent_message, 'lobby': lobby} 
-        async def CheckLobby(sent_message, lobby):
-            message = "Full"
-
-            lobbyData = await self.init.getAllLobby()
-            
-            limit = None  
-            for data in self.init.server_lobbies:
-                
-                if data["lobbyname"] == lobby:
-                    limit = data.get("limit")  # Use .get() to avoid KeyError if "limit" is not present
-                    break
-            
-            if limit is not None:  # Proceed only if limit is found
-                for x in lobbyData:
-                    if x.get("name") == lobby and x.get("connection", 0) < limit:  # Adjust condition check
-                        message = "Available"
-                        break
-
-            return {'message': message, 'message_data':sent_message} 
-        
-        async def Login(guild_id, sent_message):  
-            # Logging in process
-            embed = Embed(
-                description="Logging in ...",
-                color=0x7289DA 
-            )
-            await sent_message.edit(embed=embed)
-            await asyncio.sleep(1)
-            embed.description = "Linking into Open World Server..."
-            await sent_message.edit(embed=embed)
-            await asyncio.sleep(1)
-            embed.description = f"Confirming Connection with World - `{guild_id}`..."
-            await sent_message.edit(embed=embed)
-            await asyncio.sleep(1)
-            embed.description = f"Fetching Data from World - `{guild_id}`..."
-            await sent_message.edit(embed=embed)
-            await asyncio.sleep(1)
-
-            return {'message':'Success', 'message_data':sent_message} 
-        
-        async def CreateConnection(lobby, sent_message, guild_name):
-            # Create Connection
-            # now connect
-            await self.repos.create_guild_document(guild_id, channel, guild_name, lobby)
-            embed = Embed(
-                description=f':white_check_mark: **LINK START!! You are now connected to {lobby}**',
-                color=0x7289DA 
-            )
-            await sent_message.edit(embed=embed)
-            await asyncio.sleep(1)
-            # sends a successful message
-            embed = Embed(
-                title="Thank you for linking with Open World Server!",
-                description= self.init.openworldThanksMessage,
-                color=0x00FF00 
-            )
-            message = await ctx.send(embed=embed)
-            await message.add_reaction('✅')
-            return {'message':'Success', 'message_data':sent_message} 
-        
-        def isFailed(response):
-            if(response['message'] == "Failed"):
-                raise Exception("")
-            else:
-                return response
-            
-        async def Sequence(guild_id, channel_id, guild_name):
-            
-            while True:
-                response = isFailed(await Validation(guild_id, channel_id))
-   
-                responseWithlobby = isFailed(await SelectLobbies(guild_id, response['message_data']))
-
-                response = isFailed(await CheckLobby(response['message_data'], responseWithlobby["lobby"]))
-                if response["message"] == "Available":
-                    break
-            response = isFailed(await Login(guild_id, responseWithlobby['message_data']))
-            
-            response = isFailed(await CreateConnection(responseWithlobby['lobby'], response['message_data'], guild_name))
-            await self.on_join_announce(ctx,guild_name, responseWithlobby['lobby'])
-
-        # ======================================================================================
-        # Runtime Manager
-
         guild_id = ctx.guild.id
         channel_id = channel.id
         guild_name = ctx.guild.name
 
-        # Sequence 
-        await Sequence(guild_id, channel_id, guild_name)
+        embed = Embed(
+            description="Preparing ...",
+            color=0x7289DA 
+        )
+        sent_message = await ctx.send(embed=embed)
+        existing_guild = self.init.find_guild(guild_id, channel_id)
+        if existing_guild:
+            embed = Embed(
+                title=":no_entry: Your channel is already registered for Open World Chat",
+                description="Type `a!unlink` to unlink your Open World\n*This will only unlink from the Open World channel*",
+                color=0xFF0000  # Red color
+            )
+            await sent_message.edit(embed=embed)
+            return 
+
+        # TODO: Auto Connect Feature
+        # Shows an embed that asks the user to proceed or explore more
+        #=====================================
+        lobby = await self.handle_auto_connect(ctx)
+        
+        lobby = await self.handle_lobby_selection(ctx)
+        if not lobby:
+            return
+        
+        # Logging in process
+        steps = [
+            "Logging in ...",
+            "Linking into Open World Server...",
+            f"Confirming Connection with World - `{guild_id}`...",
+            f"Fetching Data from World - `{guild_id}`..."
+        ]
+        
+        for step in steps:
+            embed.description = step
+            await sent_message.edit(embed=embed)
+            await asyncio.sleep(1)
+        
+
+        await self.repos.create_guild_document(guild_id, channel, guild_name, lobby)
+        embed = Embed(
+            description=f':white_check_mark: **LINK START!! You are now connected to {lobby}**',
+            color=0x7289DA 
+        )
+        await sent_message.edit(embed=embed)
+        await asyncio.sleep(1)
+        # sends a successful message
+        embed = Embed(
+            title="Thank you for linking with Open World Server!",
+            description= self.init.openworldThanksMessage,
+            color=0x00FF00 
+        )
+
+        message = await ctx.send(embed=embed)
+
+        await message.add_reaction('✅')
+
+        await self.on_join_announce(ctx,guild_name, lobby)
+       
+    async def handle_auto_connect(self,ctx):
+        pass
+
+    async def handle_lobby_selection(self,ctx):
+       
+        while True:
+        
+            embed = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
+            lobby =ConnectDropDown(ctx.message.author,self.init.server_lobbies)
+            
+            message_drp = await ctx.send(view=lobby,embed=embed)
+            try:
+                await asyncio.wait_for(lobby.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                await ctx.send("You didn't respond within the specified time.")
+                await message_drp.delete()
+                return
+            
+            selected_lobby = lobby.lobby
+            await message_drp.delete()
+        
+
+            for lobby in self.init.server_lobbies:
+                if lobby["lobbyname"] == selected_lobby:
+                    description = lobby["description"]
+                    
+            description = next((lobby["description"] for lobby in self.init.server_lobbies if lobby["lobbyname"] == selected_lobby), "No description available")
+            guilds = self.init.getAllGuildUnderLobby(selected_lobby)
+
+            data = "\n\n".join([f"**{i+1}**) **{guild['server_name']}**" for i, guild in enumerate(guilds)]) or "There's no guild connected to this lobby"
+            choice_view = DynamicChoice(ctx.message.author, ["Confirm","Cancel"])
+
+            embed = Embed(
+                title= selected_lobby,
+                description=description,
+                color=0x7289DA
+            )
+
+            
+            embed.add_field(name="Guilds",value=data)
+            select_lobby_embed = await ctx.send(embed = embed, view=choice_view)
+            
+            try:
+                await asyncio.wait_for(choice_view.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                await ctx.send("You didn't respond within the specified time.")
+                await select_lobby_embed.delete()
+                return
+                        
+            await select_lobby_embed.delete()
+
+            if choice_view.value == "Confirm":
+
+                lobbyData = await self.init.getAllLobby()
+                
+                # Validate the lobby limit
+                limit = None  
+                for data in self.init.server_lobbies:
+                    if data["lobbyname"] == selected_lobby:
+                        limit = data.get("limit") 
+                        break
+
+                available = False
+                if limit is not None:
+                    for x in lobbyData:
+                        if x.get("name") == selected_lobby and x.get("connection", 0) < limit:  # Adjust condition check
+                            available = True
+                            break
+
+                if available:
+                   return selected_lobby  
+                else:
+                    embed = Embed(
+                        title= "",
+                        description=f"The {selected_lobby} is currently full, choose another lobby to connect.",
+                        color=0x7289DA
+                    )
+                    await ctx.send(embed = embed)
+        
 
     @commands.hybrid_command(name='unlink', description='Unlink from Open World')
     async def openworldunlink(self, ctx):
@@ -219,28 +185,6 @@ class Global(commands.Cog):
                     color= 0xFF0000)
                     )
     
-    async def on_join_announce(self, ctx, guild_name, lobbyname):
-        async with aiohttp.ClientSession() as session:
-            tasks = []
-
-            for document in self.init.guild_data:
-                channels = document["channels"]
-                for channel in channels:
-                    if channel["channel_id"] != ctx.message.channel.id and lobbyname == channel["lobby_name"]:
-                        webhook = Webhook.from_url(channel["webhook"], session=session)
-                        embed = Embed(description=f"**{guild_name}** has joined the chat", color= 0xEB459F)
-                        
-                        tasks.append(
-                            webhook.send(
-                                avatar_url= self.bot.user.avatar.url,
-                                username=self.bot.user.name,
-                                embed=embed,
-                                wait=True  
-                            )
-                        )
-
-            await asyncio.gather(*tasks)
-                        
     #Get Current Lobby
     @commands.hybrid_command(name='current', description='Current Lobby description')
     async def current_lobby(self, ctx):
@@ -294,7 +238,9 @@ class Global(commands.Cog):
 
     @commands.hybrid_command(name='lobbies', description='Current Lobby description')
     async def show_lobbies(self, ctx):
-        await self.show_lobbies_embed(ctx, title="Lobbies Online",description="Some description to add")
+        embed = await self.show_lobbies_embed(ctx, title="Lobbies Online",description="Some description to add")
+
+        await ctx.send(embed = embed)
 
     async def show_lobbies_embed(self, ctx, title ,description):
         lobby_data = await self.init.getAllLobby()
@@ -322,7 +268,7 @@ class Global(commands.Cog):
             color=0x7289DA 
         )
         embed.add_field(name="Public Lobbies",value=formatted_data)
-        return await ctx.send(embed=embed)
+        return embed
     
     @commands.hybrid_command(name='switch', description='Switch to a different server lobby')
     @commands.has_permissions(kick_members=True)
@@ -431,6 +377,8 @@ class Global(commands.Cog):
                 )
             else:
                 await updateLobbyConnection(guild_id, channel_id, lobby['message_data'] , lobby["lobby"])
+                await self.on_join_announce(ctx, ctx.guild.name, lobby["lobby"])
+
         # ======================================================================================
         # Run Time Manager
         # ======================================================================================
@@ -453,6 +401,28 @@ class Global(commands.Cog):
         await ctx.send(embed=discord.Embed(description=f"User has been reported"))
         await self.init.log_report_by_user(username,ctx.author.name,reason,attacment)
 
+    async def on_join_announce(self, ctx, guild_name, lobbyname):
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+
+            for document in self.init.guild_data:
+                channels = document["channels"]
+                for channel in channels:
+                    if channel["channel_id"] != ctx.message.channel.id and lobbyname == channel["lobby_name"]:
+                        webhook = Webhook.from_url(channel["webhook"], session=session)
+                        embed = Embed(description=f"**{guild_name}** has joined the chat", color= 0xEB459F)
+                        
+                        tasks.append(
+                            webhook.send(
+                                avatar_url= self.bot.user.avatar.url,
+                                username=self.bot.user.name,
+                                embed=embed,
+                                wait=True  
+                            )
+                        )
+
+            await asyncio.gather(*tasks)
+                        
 
 ## View
 class LobbyDropDown(discord.ui.Select):
@@ -482,22 +452,29 @@ class ConnectDropDown(discord.ui.View):
     async def on_item_added(self,value):
         self.lobby = value
         self.stop()
-class Choice(discord.ui.View):
-    def __init__(self, author):
+
+class DynamicChoice(discord.ui.View):
+    def __init__(self, author, choices):
         super().__init__()
         self.author = author
         self.value = None
+        
+        # Dynamically create buttons based on the provided choices
+        for choice in choices:
+            self.add_item(self.create_button(choice))
+    
+    def create_button(self, label):
+        # Create a button with the given label
+        button = discord.ui.Button(label=label, style=discord.ButtonStyle.primary)
+        button.callback = self.button_callback
+        return button
 
-    @discord.ui.button(label="Yes" , style=discord.ButtonStyle.green)
-    async def btn1(self, interaction: discord.interactions, btn:discord.ui.button):
+    async def button_callback(self, interaction: discord.Interaction):
         if interaction.user == self.author:
-            self.value = True
-            await interaction.response.defer()
-            self.stop()
-
-    @discord.ui.button(label="Back" , style=discord.ButtonStyle.red)
-    async def btn2(self, interaction: discord.interactions, btn:discord.ui.button):
-        if interaction.user == self.author:
-            self.value = False
+            # Find the button that was clicked by matching custom_id
+            for x in interaction.message.components:
+                for button in x.children:
+                    if button.custom_id == interaction.data['custom_id']:
+                        self.value = button.label
             await interaction.response.defer()
             self.stop()
