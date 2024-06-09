@@ -132,33 +132,34 @@ class Global(commands.Cog):
                         
             await select_lobby_embed.delete()
 
-            if choice_view.value == "Confirm":
+            if choice_view.value != "Confirm":
+                continue    
+        
+            lobbyData = await self.init.getAllLobby()
+            
+            # Validate the lobby limit
+            limit = None  
+            for data in self.init.server_lobbies:
+                if data["lobbyname"] == selected_lobby:
+                    limit = data.get("limit") 
+                    break
 
-                lobbyData = await self.init.getAllLobby()
-                
-                # Validate the lobby limit
-                limit = None  
-                for data in self.init.server_lobbies:
-                    if data["lobbyname"] == selected_lobby:
-                        limit = data.get("limit") 
+            available = False
+            if limit is not None:
+                for x in lobbyData:
+                    if x.get("name") == selected_lobby and x.get("connection", 0) < limit:  # Adjust condition check
+                        available = True
                         break
 
-                available = False
-                if limit is not None:
-                    for x in lobbyData:
-                        if x.get("name") == selected_lobby and x.get("connection", 0) < limit:  # Adjust condition check
-                            available = True
-                            break
-
-                if available:
-                   return selected_lobby  
-                else:
-                    embed = Embed(
-                        title= "",
-                        description=f"The {selected_lobby} is currently full, choose another lobby to connect.",
-                        color=0x7289DA
-                    )
-                    await ctx.send(embed = embed)
+            if available:
+                return selected_lobby  
+            else:
+                embed = Embed(
+                    title= "",
+                    description=f"The {selected_lobby} is currently full, choose another lobby to connect.",
+                    color=0x7289DA
+                )
+                await ctx.send(embed = embed)
         
 
     @commands.hybrid_command(name='unlink', description='Unlink from Open World')
@@ -271,127 +272,81 @@ class Global(commands.Cog):
         return embed
     
     @commands.hybrid_command(name='switch', description='Switch to a different server lobby')
-    @commands.has_permissions(kick_members=True)
     async def switch_lobby(self, ctx):
-
-        async def Menu():
-            async def ConfirmLeave():
-                embed = Embed(
-                    description= ":warning: **Are you sure do you want to leave?**",
-                    color = 0x7289DA 
-                )
-                message = await ctx.send(embed=embed)
-                
-                choice = Choice(ctx.message.author)
-                msg_choice = await ctx.send(view=choice)
-
-                try:
-                    await asyncio.wait_for(choice.wait(), timeout=60)
-                except asyncio.TimeoutError:
-                    await ctx.send("You didn't respond within the specified time.")
-                    await msg_choice.delete()
-                    await message.delete()
-                    raise Exception("")
-                
-                await message.delete()
-                await msg_choice.delete()
-                return choice.value
-            
-            async def SelectLobby():
-                message = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
-                lobby = ConnectDropDown(ctx.message.author,self.init.server_lobbies)
-                message_drop = await ctx.send(view=lobby)
-                try:
-                    await asyncio.wait_for(lobby.wait(), timeout=60)
-                except asyncio.TimeoutError:
-                    await ctx.send("You didn't respond within the specified time.")
-                    await message_drop.delete()
-                    await message.delete()
-                    raise Exception("")
-                
-
-                await message_drop.delete()
-                return {"lobby": lobby.lobby, "message":message}
-            # ======================================================================================
-            # Menu Manager
-
-            while True:
-                choice = await ConfirmLeave()
-                if choice == False:
-                    return {'message': 'Failed', 'message_data': None, "lobby": None}
-                response = await SelectLobby()
-                
-                if response['lobby']:
-                    return {'message': 'Success', 'message_data': response["message"], "lobby":  response['lobby']}
-
-
-
-        async def Validation(guild_id,channel_id):
-
-            existing_guild = self.init.find_guild(guild_id, channel_id)
-
-            if existing_guild:
-                channels = existing_guild.get("channels",[])
-                for channel in channels:
-                    # Checks if user is in the lobby
-
-                    if channel['channel_id'] == channel_id:
-                        return {'message': 'Success' , 'channel': channel}
-            else:
-                embed = Embed( 
-                    description=f":no_entry: **Your channel is not registered for Open World Chat**",
-                    color=0x7289DA 
-                )
-                await ctx.send(embed=embed)
-                return {'message': 'Failed', 'channel': None }
-            
-        # Might change this to a drop down function
-        async def updateLobbyConnection(guild_id, channel_id, message, lobby):
-            
-            await self.repos.update_guild_lobby(guild_id, channel_id, lobby)
-
-            embed = Embed(
-                description=f":white_check_mark: **You have switched to {lobby}**",
-                color=0x7289DA 
-            )
-
-            await message.edit(embed=embed)
-
-        def isFailed(response):
-            if(response['message'] == "Failed"):
-                raise Exception("")
-            else:
-                return response
-            
-        async def Sequence(guild_id,channel_id):
-            
-            channel = isFailed(await Validation(guild_id, channel_id))
-            
-            lobby = isFailed(await Menu())
-
-            if channel['channel']['lobby_name'] == lobby['lobby']:
-                await ctx.send(
-                    embed = Embed(
-                        description= f"<:no:1226959471910191154> **You're already in {lobby["lobby"]}**"
-                    )
-                )
-            else:
-                await updateLobbyConnection(guild_id, channel_id, lobby['message_data'] , lobby["lobby"])
-                await self.on_join_announce(ctx, ctx.guild.name, lobby["lobby"])
-
-        # ======================================================================================
-        # Run Time Manager
-        # ======================================================================================
-        # Potential Issues:
-        # - Chat still goes even during switching
-        #  
-        # ======================================================================================
         
         guild_id = ctx.guild.id
         channel_id = ctx.channel.id
 
-        # Sequence
-        await Sequence(guild_id,channel_id)
+        # Validation
+        existing_guild = self.init.find_guild(guild_id, channel_id)
+        
+        if not existing_guild:
+            embed = Embed( 
+                description=f":no_entry: **Your channel is not registered for Open World Chat**",
+                color=0x7289DA 
+            )  
+            await ctx.send(embed=embed)
+            return
+        
+        for channel in existing_guild["channels"]:
+            if channel["channel_id"] == channel_id:
+                connection_data = channel
+
+        # Confirmation
+        embed = Embed(
+            description= ":warning: **Are you sure do you want to leave?**",
+            color = 0x7289DA 
+        )
+        choice = DynamicChoice(ctx.message.author, ["Confirm","Cancel"])
+        confirm_message = await ctx.send(embed=embed,view=choice)
+
+        try:
+            await asyncio.wait_for(choice.wait(), timeout=60)
+        except asyncio.TimeoutError:
+            await ctx.send("You didn't respond within the specified time.")
+            await confirm_message.delete()
+            raise Exception("")
+        
+        await confirm_message.delete()
+
+        if choice.value == "Cancel":
+            return
+        
+        # Switching Process
+        while True:
+            embed = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
+            lobby = ConnectDropDown(ctx.message.author, self.init.server_lobbies)
+            message_drop = await ctx.send(embed=embed,view=lobby)
+
+            try:
+                await asyncio.wait_for(lobby.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                await ctx.send("You didn't respond within the specified time.")
+                await message_drop.delete()
+                raise Exception("")
+            
+            await message_drop.delete()
+            selected_lobby = lobby.lobby
+            if connection_data["lobby_name"] == selected_lobby:
+                    await ctx.send(
+                        embed = Embed(
+                            description= f"<:no:1226959471910191154> **You're already in {selected_lobby}**"
+                        )
+                    )
+            else:
+                break
+
+        await self.repos.update_guild_lobby(guild_id, channel_id, selected_lobby)
+
+        embed = Embed(
+            description=f":white_check_mark: **You have switched to {selected_lobby}**",
+            color=0x7289DA 
+        )
+
+        await ctx.send(embed=embed)
+        await self.on_join_announce(ctx, ctx.guild.name, selected_lobby)
+       
+              
 
     @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
     async def report_user(self, ctx,username, reason, attacment:discord.Attachment):
@@ -410,8 +365,9 @@ class Global(commands.Cog):
                 for channel in channels:
                     if channel["channel_id"] != ctx.message.channel.id and lobbyname == channel["lobby_name"]:
                         webhook = Webhook.from_url(channel["webhook"], session=session)
-                        embed = Embed(description=f"**{guild_name}** has joined the chat", color= 0xEB459F)
-                        
+                        embed = Embed(color= 0xEB459F)
+                        embed.set_author(name=f"{guild_name} has joined the chat",icon_url=ctx.guild.icon.url)
+
                         tasks.append(
                             webhook.send(
                                 avatar_url= self.bot.user.avatar.url,
