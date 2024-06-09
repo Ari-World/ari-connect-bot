@@ -27,7 +27,7 @@ class OpenWorldServer(commands.Cog):
     def __init__(self, bot:commands.Bot):
         self.bot = bot
         self.server_lobbies = None
-        self.deleteMessageThreshold = 3600
+        self.deleteMessageThreshold = 600
         self.cacheMessages = []
         self.mute_task = {}
         self.openworldThanksMessage = ("Thanks for connecting to the Open World Server! \n\n"+
