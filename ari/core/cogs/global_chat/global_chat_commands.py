@@ -41,11 +41,12 @@ class Global(commands.Cog):
         # TODO: Auto Connect Feature
         # Shows an embed that asks the user to proceed or explore more
         #=====================================
-        lobby = await self.handle_auto_connect(ctx)
+        autoconnect, lobby = await self.handle_auto_connect(ctx)
         
-        lobby = await self.handle_lobby_selection(ctx)
-        if not lobby:
-            return
+        if not autoconnect:
+            lobby = await self.handle_lobby_selection(ctx)
+            if not lobby:
+                return
         
         # Logging in process
         steps = [
@@ -82,7 +83,31 @@ class Global(commands.Cog):
         await self.on_join_announce(ctx,guild_name, lobby)
        
     async def handle_auto_connect(self,ctx):
-        pass
+        lobbyData = self.init.generalLobby
+        isValid = await self.validateLobby(lobbyData)
+        
+        if not isValid:
+            return False
+        
+        embed = Embed(
+            description= f":warning: **You are about to connect to {lobbyData}**",
+            color = 0x7289DA 
+        )
+        choice = DynamicChoice(ctx.message.author, ["Proceed"," Explore More"])
+        confirm_message = await ctx.send(embed=embed,view=choice)
+        try:
+            await asyncio.wait_for(choice.wait(), timeout=60)
+        except asyncio.TimeoutError:
+            await ctx.send("You didn't respond within the specified time.")
+            await confirm_message.delete()
+            return
+        
+        await confirm_message.delete()
+        if choice.value == "Proceed":
+            return True, lobbyData
+        else:
+            return False, None
+        
 
     async def handle_lobby_selection(self,ctx):
        
@@ -134,34 +159,40 @@ class Global(commands.Cog):
 
             if choice_view.value != "Confirm":
                 continue    
-        
-            lobbyData = await self.init.getAllLobby()
-            
             # Validate the lobby limit
-            limit = None  
-            for data in self.init.server_lobbies:
-                if data["lobbyname"] == selected_lobby:
-                    limit = data.get("limit") 
-                    break
-
-            available = False
-            if limit is not None:
-                for x in lobbyData:
-                    if x.get("name") == selected_lobby and x.get("connection", 0) < limit:  # Adjust condition check
-                        available = True
-                        break
-
-            if available:
-                return selected_lobby  
+            isValid = await self.validateLobby(selected_lobby)
+            
+            if isValid:
+                return selected_lobby
             else:
                 embed = Embed(
-                    title= "",
-                    description=f"The {selected_lobby} is currently full, choose another lobby to connect.",
-                    color=0x7289DA
+                title= "",
+                description=f"The {selected_lobby} is currently full, choose another lobby to connect.",
+                color=0x7289DA
                 )
                 await ctx.send(embed = embed)
+                
         
+    async def validateLobby(self, selected_lobby):
+        lobbyData = await self.init.getAllLobby()
+        limit = None  
+        for data in self.init.server_lobbies:
+            if data["lobbyname"] == selected_lobby:
+                limit = data.get("limit") 
+                break
 
+        available = False
+        if limit is not None:
+            for x in lobbyData:
+                if x.get("name") == selected_lobby and x.get("connection", 0) < limit:  # Adjust condition check
+                    available = True
+                    break
+
+        if available:
+            return True  
+        else:
+            return False
+        
     @commands.hybrid_command(name='unlink', description='Unlink from Open World')
     async def openworldunlink(self, ctx):
         # Initialize needed data
@@ -349,7 +380,7 @@ class Global(commands.Cog):
               
 
     @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
-    async def report_user(self, ctx,username, reason, attacment:discord.Attachment):
+    async def report_user(self, ctx,username, reason, attacment:discord.Attachment = None):
         if not attacment:
             await ctx.send(embed=discord.Embed(description=f"Please provide a picture"))
 

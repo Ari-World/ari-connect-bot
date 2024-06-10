@@ -18,6 +18,7 @@ class Intialization:
     def __init__(self,bot : commands.Bot):
         self.bot = bot
         self.bypass_delete_listener = set()
+        self.generalLobby = getGeneralLobby()
         # TODO: Move this somewhere maybe as a json file
         self.openworldThanksMessage = ("Thanks for connecting to the Open World Server! \n\n"+
         "**Remember to:** \n" +

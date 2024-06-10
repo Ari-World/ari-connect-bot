@@ -9,7 +9,7 @@ log = logging.getLogger("ari.data_manager")
 basic_config = None
 
 # As for now data is saved via .env
-# TODO: Change the config to json 
+# TODO: Change the config to VENV or something much efficient to this 
 def load_basic_configuration():
     """Loads the basic bootstrap configuration necessary for `Config`
     to know where to store or look for data.
@@ -36,6 +36,7 @@ def load_basic_configuration():
 
     caching_threshold = os.getenv('CACHE_THRESHOLD')
 
+    general_lobby_name = os.getenv('GENERAL_LOBBY_NAME')
 
     if discord_api_token is None or discord_api_token == '':
         log.error("Environment variable 'DISCORD_API_TOKEN' is required!")
@@ -51,7 +52,8 @@ def load_basic_configuration():
         'LOG_SYSTEM_ID' : log_system_id,
         'LOG_MOD_ID' : log_mod_id,
         'LOG_PLAYER_REPORT_ID' : log_player_report_id,
-        'CACHE_THRESHOLD': caching_threshold
+        'CACHE_THRESHOLD': caching_threshold,
+        'GENERAL_LOBBY_NAME' : general_lobby_name
     }
 
     log.info(basic_config)
@@ -134,5 +136,11 @@ def getPlayerReportLogChannelID():
 def getCacheThreshold():
     try:
         return basic_config['CACHE_THRESHOLD']
+    except KeyError as e:
+        raise RuntimeError("Bot basic config has not been loaded yet") from e
+    
+def getGeneralLobby():
+    try:
+        return basic_config['GENERAL_LOBBY_NAME']
     except KeyError as e:
         raise RuntimeError("Bot basic config has not been loaded yet") from e
