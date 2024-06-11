@@ -47,9 +47,17 @@ class Core(commands.Cog,CoreLogic):
         latency_ms = round(latency * 1000)  # Convert to milliseconds
         await ctx.send(f'Pong! 🏓 Latency is {latency_ms}ms')
 
+    
+
 class MyHelpCommand(commands.HelpCommand):
     def __init__(self):
         super().__init__()
+
+    @commands.hybrid_command(name="help")
+    async def help_command(self, ctx):
+        """Shows this message"""
+        await self.send_bot_help(ctx)
+
 
     async def send_bot_help(self, mapping):
         ctx = self.context

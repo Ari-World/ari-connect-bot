@@ -104,7 +104,14 @@ class Intialization:
         except discord.NotFound:
             return None
 
-
+    
+    def get_user_level(self, user_id):
+        for modData in self.moderator:
+            for mod in modData["mods"]:
+                if mod["user_id"] == str(user_id):
+                    return int(modData["level"])
+        return 0  
+    
     def contains_malicious_url(self, content):
         if self.malicious_urls and self.malicious_words:
             for url in self.malicious_urls:

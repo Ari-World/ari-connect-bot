@@ -6,10 +6,26 @@ from discord import Embed, Webhook
 import discord
 from discord.ext import commands
 
+import functools
 
 # This command is limited to level 1-2-3 role users
 
 log = logging.getLogger("globalchat.moderation")
+
+
+# Decorator for lobby required level
+def level_required(required_level):
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(self, ctx, *args, **kwargs):
+            user_level = self.init.get_user_level(ctx.author.id)
+            if user_level > required_level+1 :
+                await ctx.send(embed=discord.Embed(description=f"You don't have the required permission level {required_level} to use this command"))
+                return
+            return await func(self, ctx, *args, **kwargs)
+        return wrapper
+    return decorator
+
 
 class Moderation(commands.Cog):
     def __init__(self, bot:commands.Bot, repositories, initialization, cacheManager):
@@ -17,229 +33,54 @@ class Moderation(commands.Cog):
         self.repos = repositories
         self.init = initialization
         self.cache_manager = cacheManager
-
     
-    def ValidateUser(self,user_id):
-        for modData in self.init.moderator:
-                if modData["level"] == "1" or  modData["level"] == "2" or  modData["level"] == "3":
-                    for mod in modData["mods"]:
-                        if mod["user_id"] == str(user_id):
-                            return True                    
-        return False
-
-    
-    @commands.command(name="addhooks")
-    @commands.is_owner()
-    async def addHooks(self,ctx :commands.Context):
-
-        msg = await ctx.send(embed = Embed( description="Checking discord webhooks in channels"))
-        changes = []
-        errors = []
-        
-        for guild in self.init.guild_data:
-            for channel in guild["channels"]:
-                try:
-                    chnlObj = await self.bot.fetch_channel(channel["channel_id"])
-                    if "webhook" not in channel:
-                        webhook = await chnlObj.create_webhook(name=guild["server_name"])
-                        channel["webhook"] = webhook.url  # Assign webhook URL
-                        changes.append(f"{guild["server_name"]} webhook created")
-                    elif "webhook" in channel:
-                        # Check if the webhook still exists in the channel
-                        existing_webhooks = await chnlObj.webhooks()
-                        webhook_url = channel["webhook"]
-                        if not any(webhook.url == webhook_url for webhook in existing_webhooks):
-                            # Recreate the webhook if it doesn't exist
-                            webhook = await chnlObj.create_webhook(name=guild["server_name"])
-                            channel["webhook"] = webhook.url  # Assign webhook URL
-                            changes.append(f"{guild["server_name"]} webhook updated")
-                except Exception as e:
-                    errors.append(f"{guild['server_name']} : {e}")
-
-            await self.repos.guild_repository.update({
-                "server_id": guild["server_id"],
-                "channels": guild["channels"]
-            })
-
-        await msg.edit(embed = Embed( description="Writing reports"))
-        message = "Webhooks in all channels of each server has been refreshed"
-        embed = Embed(
-                title = "Report",
-                description= message
-            )
-        if changes:
-            text = ""
-            for data in changes:
-                text += data
-            embed.add_field(name="Report",value=text)
-
-        if errors:
-            text = ""
-            for data in errors:
-                text += data
-            embed.add_field(name="Errors",value=text)
-
-        await msg.edit(embed=embed)
-
-    @commands.hybrid_command(name="reloaddata")
-    async def reload(self, ctx):
-        allowed = self.ValidateUser(ctx.author.id)
-        if not allowed:
-            await ctx.send(embed=Embed(description="You don't have the permission to use this command"))
-            return
-        await self.init.load_data(self.repos.guild_repository, self.repos.lobby_repository, self.repos.muted_repository, self.repos.malicious_urls_repository, self.repos.malicious_words_repository, self.repos.moderator_repository)
-        await ctx.send(embed=Embed(description="Data Loaded"))
+    # ===============================================================================================================
+    # LEVEL 3 COMMANDS                                                                                              =
+    # =============================================================================================================== 
     
     # TODO: Improve Embed
-    @commands.hybrid_command(name="moderation")
-    #@commands.has_role("@Ari Global Mod")
+    @commands.hybrid_command(name="moderation", description="This command level 3 moderation access only")
+    @level_required(3)
     async def GcCommands(self,ctx):
-        if self.ValidateUser(ctx.author.id):
-            embed = Embed(
-                title="Moderation Commands",
-                description= (
-                    "All Moderation commands is now available as a Slash command (experimental)\n but still try to work on normal commands"
-                ),
-                color=0xFFC0CB
-            )
-            embed.add_field(name="Global Chat Commands", value=(
-                
+        
+        embed = Embed(
+            title="Moderation Commands",
+            description= (
+                "All Moderation commands is now available as a Slash command (experimental)\n but still try to work on normal commands"
+            ),
+            color=0xFFC0CB
+        )
+        embed.add_field(name="Global Chat Commands", value=(
             
-                "`a!listmuted` - Shows all muted user globally\n"
-                "`a!listbadwords` - Shows all banned words\n"
-                "`a!listbadurls` - Shows all banned urls\n\n"
-                
-                "`a!mute <id> \" reason \"` - Mute user globally\n"
-                "`a!unmute <id>` - Unmute user id\n\n"
-
-                "`a!add_lobby \"Lobby Name\"` - Add public global chat\n"
-                "`a!remove_lobby \"Lobby Name\"` - Remove public chat\n\n"
-                
-                "`a!add_badlink \"word\"` - Add word to filter\n"
-                "`a!remove_links \"word\"` - Remove word to the list\n\n"
-
-                "`a!add_badwords \"word\"` - Add word to filter\n"
-                "`a!remove_badwords \"word\"` - Remove word to the list\n\n"
-                
-                "`a!delete` - Reply to a message and just run this command, it will automatically delete message\n\n" 
-
-                "**Deprecated Commands**\n"
-                "`a!reload data`- reload data in the cache (still working)\n"
-                "Reason: Removed because its already automated, beware to reload data unless necessary causes database query overload\n\n"
+        
+            "`a!listmuted` - Shows all muted user globally\n"
+            "`a!listbadwords` - Shows all banned words\n"
+            "`a!listbadurls` - Shows all banned urls\n\n"
             
-            ), inline=False)
-            await ctx.send(embed = embed)
+            "`a!mute <id> \" reason \"` - Mute user globally\n"
+            "`a!unmute <id>` - Unmute user id\n\n"
 
-    # TODO: Improve Embed
-    @commands.hybrid_command(name="listroles")
-    async def getAllRoles(self,ctx):
-        allowed = self.ValidateUser(ctx.author.id)
+            "`a!add_lobby \"Lobby Name\"` - Add public global chat\n"
+            "`a!remove_lobby \"Lobby Name\"` - Remove public chat\n\n"
+            
+            "`a!add_badlink \"word\"` - Add word to filter\n"
+            "`a!remove_links \"word\"` - Remove word to the list\n\n"
 
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
+            "`a!add_badwords \"word\"` - Add word to filter\n"
+            "`a!remove_badwords \"word\"` - Remove word to the list\n\n"
+            
+            "`a!delete` - Reply to a message and just run this command, it will automatically delete message\n\n" 
+
+            "**Deprecated Commands**\n"
+            "`a!reload data`- reload data in the cache (still working)\n"
+            "Reason: Removed because its already automated, beware to reload data unless necessary causes database query overload\n\n"
         
-        format_data = ""
-        if self.init.moderator:
-            x = 1
-            for data in self.init.moderator:
-                
-                text = f" {data["icon"]} **{data['role_name']}**\n Level: {data['level']}\n"
-                
-                y = 1
-                for mod in data["mods"]:
-                    modText = f"> {str(y)}. {mod['name']} ({mod['user_id']})\n > Lobby: {mod['lobby_name']}"
+        ), inline=False)
+        await ctx.send(embed = embed)
 
-                    text += modText + "\n"
-                    y +=1 
-                format_data += text + "\n"
-        else:
-            format_data = "No moderation roles found."
-        embed = Embed(
-            title="Moderation List Roles",
-            description=format_data
-        )
-        await ctx.send(embed=embed)
-
-    # TODO: Improve Embed
-    @commands.hybrid_command(name="listmuted")
-    async def getAllMuted(self,ctx):
-        allowed = self.ValidateUser(ctx.author.id)
-
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
-        
-        format_data = ""
-        if self.init.muted_users:
-            x=1
-            for data in self.init.muted_users:
-                text = f"{str(x)}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
-                format_data += text + "\n"
-                x += 1
-        else:
-            format_data = "No users found."
-
-        embed = Embed(
-            title="Muted List",
-            description=format_data
-        )
-        await ctx.send(embed=embed)
-
-    # TODO: Improve Embed
-    @commands.hybrid_command(name="listbadwords")
-    async def getAllBadwords(self,ctx):
-        allowed = self.ValidateUser(ctx.author.id)
-
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
-        
-        format_data = ""
-        if self.init.malicious_words:
-            x=1
-            for data in self.init.malicious_words:
-                text = f"{str(x)}) {data["content"]} "
-                format_data += text + "\n"
-                x += 1
-
-        embed = Embed(
-            title="Banned Words",
-            description=format_data
-        )
-        await ctx.send(embed=embed)
-
-    # TODO: Improve Embed
-    @commands.hybrid_command(name="listbadurls")
-    async def getAllBadUrls(self,ctx):
-        allowed = self.ValidateUser(ctx.author.id)
-
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
-        
-        format_data = ""
-        if self.init.malicious_urls:
-            x=1
-            for data in self.init.malicious_urls:
-                text = f"{str(x)}) {data["content"]} "
-                format_data += text + "\n"
-                x += 1
-
-        embed = Embed(
-            title="Banned Urls",
-            description=format_data
-        )
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name='delete')
+    @commands.hybrid_command(name='delete', description="This command level 3 moderation access only")
+    @level_required(3)
     async def delete_message_by_mods(self, ctx):
-        # Only level 1 2 3 can delete use this command
-        allowed = self.ValidateUser(ctx.author.id)
-
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))                                                         
-            return
         
         guild_id = ctx.message.guild.id
         channel_id = ctx.message.channel.id
@@ -256,9 +97,7 @@ class Moderation(commands.Cog):
         }
 
         await self.handle_delete_by_command(message_id, matched_data["lobby_name"], ctx)  
-
         await self.init.log_mod("Delete", data, ctx.message.author.id)
-
 
     async def handle_delete_by_command(self, message_id, lobby_name, ctx):
         announce = await ctx.send(embed = Embed(description="Finding the Message in the cache"))
@@ -349,16 +188,12 @@ class Moderation(commands.Cog):
             except Exception as inner_e:
                     log.warning(f"Failed to fetch or edit message: {inner_e}")
     
-    # Chat Moderation Commands
-    @commands.hybrid_command(name='mute', description ="Reply to a user to mute them or use the user_id")
-    #@commands.has_role("@Ari Global Mod")
-    async def MuteUser(self, ctx,reason:str, id : int = None):
-        
-        allowed = self.ValidateUser(ctx.author.id)
+    
 
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
+    # Chat Moderation Commands
+    @commands.hybrid_command(name='mute', description="This command level 2 moderation access only")
+    @level_required(3)
+    async def MuteUser(self, ctx,reason:str, id : int = None):
         
         user = None
         if not id:
@@ -404,15 +239,11 @@ class Moderation(commands.Cog):
         await ctx.send(embed=Embed( description=f" User {user.id} ({user.name}) has been muted"))
         await self.init.log_mod("Mute",data,ctx.message.author.id)
 
-    @commands.hybrid_command(name='unmute')
-    #@commands.has_role("@Ari Global Mod")
+    @commands.hybrid_command(name='unmute', description="This command level 3 moderation access only")
+    @level_required(3)
     async def UnMute(self, ctx, id: int = None):
         
-        allowed = self.ValidateUser(ctx.author.id)
-
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
+      
         
         exists = None
         for data in self.init.muted_users:
@@ -431,13 +262,73 @@ class Moderation(commands.Cog):
         await ctx.send(embed=Embed( description=f" User {exists["id"]} ({exists["name"]}) has been unmuted"))
         await self.init.log_mod("Unmute",exists,ctx.message.author.id)
 
-    @commands.hybrid_command(name='add_badlink')
-    async def AddblockLinks(self, ctx, content):
-        allowed = self.ValidateUser(ctx.author.id)
+    # ===============================================================================================================
+    # LEVEL 2 COMMANDS 
+    # ===============================================================================================================
+    
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="listmuted", description="This command level 2 moderation access only")
+    @level_required(2)
+    async def getAllMuted(self,ctx):
+       
+        format_data = ""
+        if self.init.muted_users:
+            x=1
+            for data in self.init.muted_users:
+                text = f"{str(x)}) **{data['name']} || {data['id']}**\nReason : {data['reason']}"
+                format_data += text + "\n"
+                x += 1
+        else:
+            format_data = "No users found."
 
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
+        embed = Embed(
+            title="Muted List",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="listbadwords", description="This command level 2 moderation access only")
+    @level_required(2)
+    async def getAllBadwords(self,ctx):
+        
+
+        format_data = ""
+        if self.init.malicious_words:
+            x=1
+            for data in self.init.malicious_words:
+                text = f"{str(x)}) {data["content"]} "
+                format_data += text + "\n"
+                x += 1
+
+        embed = Embed(
+            title="Banned Words",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="listbadurls", description="This command level 2 moderation access only")
+    @level_required(2)
+    async def getAllBadUrls(self,ctx):
+        
+        format_data = ""
+        if self.init.malicious_urls:
+            x=1
+            for data in self.init.malicious_urls:
+                text = f"{str(x)}) {data["content"]} "
+                format_data += text + "\n"
+                x += 1
+
+        embed = Embed(
+            title="Banned Urls",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name='add_badlink', description="This command level 2 moderation access only")
+    @level_required(2)
+    async def AddblockLinks(self, ctx, content):
        
         self.init.malicious_urls.append({"content":content})
         await self.repos.malicious_urls_repository.create(content)
@@ -446,14 +337,10 @@ class Moderation(commands.Cog):
         ))
         await self.init.log_mod("add_badlink",content,ctx.message.author.id)
     
-    @commands.hybrid_command(name='remove_links')
+    @commands.hybrid_command(name='remove_links', description="This command level 2 moderation access only")
+    @level_required(2)
     async def RemoveBlockLinks(self, ctx, content):
-        allowed = self.ValidateUser(ctx.author.id)
-
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
-
+       
         exists = await self.repos.malicious_urls_repository.findOne(content)
  
         if exists:
@@ -464,7 +351,8 @@ class Moderation(commands.Cog):
         else:    
             await ctx.send(embed=Embed( description=f"{content}not found in the list"))
 
-    @commands.hybrid_command(name='add_badwords')
+    @commands.hybrid_command(name='add_badwords', description="This command level 2 moderation access only")
+    @level_required(2)
     async def Addblockwords(self,ctx, content):
         allowed = self.ValidateUser(ctx.author.id)
 
@@ -480,13 +368,9 @@ class Moderation(commands.Cog):
         await self.init.log_mod("add_badwords",content,ctx.message.author.id)
 
     
-    @commands.hybrid_command(name='remove_badwords')
+    @commands.hybrid_command(name='remove_badwords', description="This command level 2 moderation access only")
+    @level_required(2)
     async def RemoveBlockWorlds(self, ctx, content):
-        allowed = self.ValidateUser(ctx.author.id)
-
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
         
         exists = await self.repos.malicious_words_repository.findOne(content)
  
@@ -498,9 +382,44 @@ class Moderation(commands.Cog):
         else:    
             await ctx.send(embed=Embed( description=f"{content}not found in the list"))
 
-    # Owner only Commands
-    @commands.hybrid_command(name="assign_role")
-    @commands.is_owner()
+    # ===============================================================================================================
+    # LEVEL 1 COMMANDS 
+    # ===============================================================================================================
+    
+    
+    # TODO: Improve Embed
+    @commands.hybrid_command(name="listroles" , description="This command level 1 moderation access only")
+    @level_required(1)
+    async def getAllRoles(self,ctx):
+        
+        format_data = ""
+        if self.init.moderator:
+            x = 1
+            for data in self.init.moderator:
+                
+                text = f" {data["icon"]} **{data['role_name']}**\n Level: {data['level']}\n"
+                
+                y = 1
+                for mod in data["mods"]:
+                    modText = f"> {str(y)}. {mod['name']} ({mod['user_id']})\n > Lobby: {mod['lobby_name']}"
+
+                    text += modText + "\n"
+                    y +=1 
+                format_data += text + "\n"
+        else:
+            format_data = "No moderation roles found."
+        embed = Embed(
+            title="Moderation List Roles",
+            description=format_data
+        )
+        await ctx.send(embed=embed)
+
+
+    # ===============================================================================================================
+    # OWNER COMMANDS 
+    # ===============================================================================================================
+    @commands.hybrid_command(name="assign_role" , description="This command level 1 moderation access only")
+    @level_required(1)
     async def assignRole(self, ctx, level, user_id, lobby):
         
         # Checks if the role level is valid
@@ -540,8 +459,8 @@ class Moderation(commands.Cog):
         else:
             await ctx.send(embed=discord.Embed(description="Role assignment failed."))
 
-    @commands.hybrid_command(name="create_role")
-    @commands.is_owner()
+    @commands.hybrid_command(name="create_role" , description="This command level 1 moderation access only")
+    @level_required(1)
     async def createRole(self, ctx, level, role_name, icon):
         
         for data in self.init.moderator:
@@ -564,11 +483,9 @@ class Moderation(commands.Cog):
         else:
             await ctx.send(embed=discord.Embed(description="Role creation failed."))
     
-    @commands.hybrid_command(name="remove_role")
-    @commands.is_owner()
+    @commands.hybrid_command(name="remove_role" , description="This command level 1 moderation access only")
+    @level_required(1)
     async def removeRole(self, ctx, user_id ):
-
-         # Checks if the role level is valid
 
         modData = None
         role = None
@@ -590,8 +507,8 @@ class Moderation(commands.Cog):
         else:
             await ctx.send(embed=discord.Embed(description="Role deletion failed."))
         
-    @commands.hybrid_command(name='add_lobby')
-    @commands.is_owner()
+    @commands.hybrid_command(name='add_lobby' , description="This command level 1 moderation access only")
+    @level_required(1)
     async def AddLobbies(self, ctx, name:str, description: str ,limit:int):
         allowed = self.ValidateUser(ctx.author.id)
 
@@ -615,3 +532,69 @@ class Moderation(commands.Cog):
         await ctx.send(embed=discord.Embed( description=f" Lobby {name} has been newly added"))
         await self.init.log_mod("add_lobby",data,ctx.message.author.id)
 
+
+    @commands.hybrid_command(name="addhooks" , description="This command level 1 moderation access only")
+    @level_required(1)
+    async def addHooks(self,ctx :commands.Context):
+
+        msg = await ctx.send(embed = Embed( description="Checking discord webhooks in channels"))
+        changes = []
+        errors = []
+        
+        for guild in self.init.guild_data:
+            for channel in guild["channels"]:
+                try:
+                    chnlObj = await self.bot.fetch_channel(channel["channel_id"])
+                    
+                    if "webhook" not in channel:
+                        webhook = await chnlObj.create_webhook(name=guild["server_name"])
+                        channel["webhook"] = webhook.url  # Assign webhook URL
+                        changes.append(f"{guild["server_name"]} webhook created")
+                    elif "webhook" in channel:
+                        # Check if the webhook still exists in the channel
+                        existing_webhooks = await chnlObj.webhooks()
+                        webhook_url = channel["webhook"]
+                        if not any(webhook.url == webhook_url for webhook in existing_webhooks):
+                            # Recreate the webhook if it doesn't exist
+                            webhook = await chnlObj.create_webhook(name=guild["server_name"])
+                            channel["webhook"] = webhook.url  # Assign webhook URL
+                            changes.append(f"{guild["server_name"]} webhook updated")
+
+                except Exception as e:
+                    errors.append(f"{guild['server_name']} : {e}")
+                    
+            await self.repos.guild_repository.update({
+                "server_id": guild["server_id"],
+                "channels": guild["channels"]
+            })
+
+        await msg.edit(embed = Embed( description="Writing reports"))
+        message = "Webhooks in all channels of each server has been refreshed"
+        embed = Embed(
+                title = "Report",
+                description= message
+            )
+        if changes:
+            text = ""
+            for data in changes:
+                text += data
+            embed.add_field(name="Report",value=text)
+
+        if errors:
+            text = ""
+            for data in errors:
+                text += data
+            embed.add_field(name="Errors",value=text)
+
+        await msg.edit(embed=embed)
+
+    @commands.hybrid_command(name="reloaddata" , description="This command level 1 moderation access only")
+    @level_required(1)
+    async def reload(self, ctx):
+        allowed = self.ValidateUser(ctx.author.id)
+        if not allowed:
+            await ctx.send(embed=Embed(description="You don't have the permission to use this command"))
+            return
+        await self.init.load_data(self.repos.guild_repository, self.repos.lobby_repository, self.repos.muted_repository, self.repos.malicious_urls_repository, self.repos.malicious_words_repository, self.repos.moderator_repository)
+        await ctx.send(embed=Embed(description="Data Loaded"))
+    

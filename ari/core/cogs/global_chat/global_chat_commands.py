@@ -380,10 +380,8 @@ class Global(commands.Cog):
               
 
     @commands.hybrid_command(name="report",description="Report a user for misbehaving, and attach a picture for proff")
-    async def report_user(self, ctx,username, reason, attacment:discord.Attachment = None):
-        if not attacment:
-            await ctx.send(embed=discord.Embed(description=f"Please provide a picture"))
-
+    async def report_user(self, ctx, username, reason, attacment:discord.Attachment = None):
+        
         await ctx.send(embed=discord.Embed(description=f"User has been reported"))
         await self.init.log_report_by_user(username,ctx.author.name,reason,attacment)
 
