@@ -109,7 +109,7 @@ class Moderation(commands.Cog):
             combined_ids.extend(data for data in source_data["webhooksent"])
         else:
             await announce.edit(embed=Embed(description=f"**Unknown ID {message_id}**\n\n"
-                                       "If this message has been out there for more than 5 minutes, I will be unable to delete the message."))
+                                       f"If this message has been out there for more than {self.cache_manager.deleteMessageThreshold / 60} mins, I will be unable to delete the message."))
             return
         await announce.edit(embed= Embed(description="Commencing the deletion of the message"))
         async with aiohttp.ClientSession() as session:
