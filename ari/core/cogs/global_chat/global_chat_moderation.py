@@ -19,7 +19,7 @@ def level_required(required_level):
         @functools.wraps(func)
         async def wrapper(self, ctx, *args, **kwargs):
             user_level = self.init.get_user_level(ctx.author.id)
-            if user_level > required_level+1 :
+            if user_level < required_level+1 :
                 await ctx.send(embed=discord.Embed(description=f"You don't have the required permission level {required_level} to use this command"))
                 return
             return await func(self, ctx, *args, **kwargs)
