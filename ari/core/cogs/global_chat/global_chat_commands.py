@@ -87,7 +87,7 @@ class Global(commands.Cog):
         isValid = await self.validateLobby(lobbyData)
         
         if not isValid:
-            return False
+            return False, None
         
         embed = Embed(
             description= f":warning: **You are about to connect to {lobbyData}**",
@@ -343,39 +343,19 @@ class Global(commands.Cog):
         if choice.value == "Cancel":
             return
         
-        # Switching Process
-        while True:
-            embed = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
-            lobby = ConnectDropDown(ctx.message.author, self.init.server_lobbies)
-            message_drop = await ctx.send(embed=embed,view=lobby)
+        lobby = await self.handle_lobby_selection(ctx)
+        if not lobby:
+            return
 
-            try:
-                await asyncio.wait_for(lobby.wait(), timeout=60)
-            except asyncio.TimeoutError:
-                await ctx.send("You didn't respond within the specified time.")
-                await message_drop.delete()
-                raise Exception("")
-            
-            await message_drop.delete()
-            selected_lobby = lobby.lobby
-            if connection_data["lobby_name"] == selected_lobby:
-                    await ctx.send(
-                        embed = Embed(
-                            description= f"<:no:1226959471910191154> **You're already in {selected_lobby}**"
-                        )
-                    )
-            else:
-                break
-
-        await self.repos.update_guild_lobby(guild_id, channel_id, selected_lobby)
+        await self.repos.update_guild_lobby(guild_id, channel_id, lobby)
 
         embed = Embed(
-            description=f":white_check_mark: **You have switched to {selected_lobby}**",
+            description=f":white_check_mark: **You have switched to {lobby}**",
             color=0x7289DA 
         )
 
         await ctx.send(embed=embed)
-        await self.on_join_announce(ctx, ctx.guild.name, selected_lobby)
+        await self.on_join_announce(ctx, ctx.guild.name, lobby)
        
               
 

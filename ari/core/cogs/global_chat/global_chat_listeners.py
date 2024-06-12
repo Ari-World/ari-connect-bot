@@ -10,7 +10,7 @@ import re
 import aiohttp
 import discord
 from discord.ext import commands
-from discord import Embed, Webhook
+from discord import Embed, HTTPException, Webhook
 import logging
 
 
@@ -68,7 +68,6 @@ class EventListeners(commands.Cog):
                                                               f" Word: {word}"))    
             await self.init.log_report(after, "Editing Malicious Content")
             return
-        
         await self.validate_webhook_channel(after, guild_document, channel_id, MessageTypes.UPDATE, before)
 
     @commands.Cog.listener()
@@ -144,7 +143,6 @@ class EventListeners(commands.Cog):
                 
                 combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
             except TypeError as e:
-                channel = await self.bot.fetch_channel(channel_id)
                 log.info(e)
             except UnboundLocalError as e:
                 log.info(e)
@@ -163,24 +161,33 @@ class EventListeners(commands.Cog):
                     # Checks if its not the guild and the channels via id basically filtered out the current channel
                     if channel["channel_id"] != channel_id and channel["lobby_name"] == lobby_name:
                         
-                        # webhook = self.create_webhook(channel["webhook"], session, messageType)
-                        webhook  = Webhook.from_url(channel["webhook"], session=session)
+                        try:
+                            # webhook = self.create_webhook(channel["webhook"], session, messageType)
+                            webhook  = Webhook.from_url(channel["webhook"], session=session)
 
-                        if messageType == MessageTypes.SEND:
-                            tasks.append(self.process_message(webhook,  message, messagesData))
-                            
-                        elif messageType == MessageTypes.REPLY: # Remove and combined_ids
-                            # Reply Jump message
-                            # view = await self.handle_reply(combined_ids, channel["channel_id"] )
-                            tasks.append( self.process_message(webhook, message, messagesData, embed))
+                            if messageType == MessageTypes.SEND:
+                                tasks.append(self.process_message(webhook,  message, messagesData))
+                                
+                            elif messageType == MessageTypes.REPLY: # Remove and combined_ids
+                                # Reply Jump message
+                                # view = await self.handle_reply(combined_ids, channel["channel_id"] )
+                                tasks.append( self.process_message(webhook, message, messagesData, embed))
 
-                        elif messageType == MessageTypes.DELETE and combined_ids:
-                            relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids,)
-                            tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
-                        elif messageType == MessageTypes.UPDATE and combined_ids:
-                            relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
-                            tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
-
+                            elif messageType == MessageTypes.DELETE and combined_ids:
+                                channel_obj = await self.bot.fetch_channel(channel["channel_id"])
+                                relative_message : discord.Message = await self.inti.find_messageID(channel_obj,combined_ids)
+                                
+                                tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+                            elif messageType == MessageTypes.UPDATE and combined_ids:
+                                relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
+                                tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+                        except HTTPException as e:
+                            if e.status == 429:
+                                retry_after = int(e.response.headers['Retry-After'])
+                                await asyncio.sleep(retry_after)
+                                tasks.append(self.send_to_matching_lobbies(message, lobby_name, channel_id, messageType, msg2))
+                        except UnboundLocalError as e:
+                            log.warning(e)
 
             await asyncio.gather(*tasks)
 
@@ -221,7 +228,7 @@ class EventListeners(commands.Cog):
             else:
                 embed = embed  # Use provided embed
                 content = message.content  # Use message content
-
+    
             # Allows default avatar if theres none
             avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
             
@@ -235,62 +242,82 @@ class EventListeners(commands.Cog):
                 wait=True,
             )
             messagesData["webhooksent"].append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id})
-
-            # This is jump command for the button view 
-            # it needs to be this way because its partial view which need to have a state
-            # if view and embed:
-            #     wmsg : discord.WebhookMessage  = await webhook.send(
-            #         content=  content,
-            #         username=f"{message.author.global_name} || {message.guild.name}",
-            #         avatar_url=message.author.avatar.url,
-            #         allowed_mentions=allowed_mentions,
-            #         files=files,
-            #         embed = embed,
-            #         view = view,
-            #         wait=True
-            #     )
-            # else:
-            #     wmsg : discord.WebhookMessage  = await webhook.send(
-            #         content=  content,
-            #         username=f"{message.author.global_name} || {message.guild.name}",
-            #         avatar_url=message.author.avatar.url,
-            #         allowed_mentions=allowed_mentions,
-            #         files=files,
-            #         embed = embed,
-            #         wait=True
-            #     )
         except KeyError as k:
             log.warning(k)
         except Exception as e:
             log.warning(e)
 
-    # Not currently used
-    async def handle_reply(self, combined_ids, target_channel_id):
-        """Handles reply Jump Button feature
+    async def process_reply(self,  webhook : Webhook, message : discord.Message, messagesData, embed, jump_url):
+        try:
+            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
 
-            Parameters:
-                combined_ids : list[ dict ]
-                target_channel_id : int
+            files = [await attachment.to_file() for attachment in message.attachments]
             
-            Returns:
-                view: Discord.view, and None if replied_message is None
-        """
-        log.info("Getting the message id")
-        channel = self.bot.get_channel(target_channel_id)
-        fetch_tasks = [self.try_fetch_message(target_channel_id, data, channel) for data in combined_ids]
-        fetched_messages = await asyncio.gather(*fetch_tasks)
-        replied_message = next((msg for msg in fetched_messages if msg is not None), None)
-        log.info("Message found")
-        log.info(replied_message)
-        if replied_message:
-            view = discord.ui.View()
-            view.add_item(discord.ui.Button(label="Jump to message", style=discord.ButtonStyle.link, url=replied_message.jump_url))
-            return view
-        else:
-            log.warning("There's no replied message found")
-            return None
- 
-   
+            # Generating user name
+            modIcon = None
+            for modData in self.init.moderator:
+                for mod in modData["mods"]:
+                    if mod["user_id"] == str(message.author.id):
+                        modIcon = modData["icon"]
+                        break
+            
+            if modIcon:  
+                if hasattr(message.author,'global_name') and message.author.global_name:
+                    username = f"{modIcon} {message.author.global_name} || {message.guild.name}"
+                else:
+                    username = f"{modIcon} {message.author.name} || {message.guild.name}"
+            else:
+                if hasattr(message.author,'global_name') and message.author.global_name:
+                    username = f"{message.author.global_name} || {message.guild.name}"
+                else:
+                    username = f"{message.author.name} || {message.guild.name}"    
+
+            # TODO: Sticker this is not working
+            # Check if the message contains a sticker
+            if message.stickers and not embed:  # If there's a sticker and embed argument is not provided
+                sticker = message.stickers[0]  # Assuming there's only one sticker in the message
+                embed = discord.Embed(f"{message.author.global_name} || {message.guild.name} has sent a sticker")
+                embed.set_image(url=sticker.url if hasattr(sticker, 'url') else sticker.image_url)
+                content = message.content
+            else:
+                embed = embed  # Use provided embed
+                content = message.content  # Use message content
+
+            # Allows default avatar if theres none
+            avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
+            
+            if jump_url:
+                view = discord.ui.View()
+                view.add_item(discord.ui.Button(label="Jump to message", style=discord.ButtonStyle.link, url= jump_url))
+                
+                wmsg : discord.WebhookMessage  = await webhook.send(
+                    content=  content,
+                    username= username,
+                    avatar_url= avatar_url,
+                    allowed_mentions=allowed_mentions,
+                    files=files,
+                    embed = embed,
+                    view = view,
+                    wait=True
+                )
+            else: 
+                wmsg : discord.WebhookMessage  = await webhook.send(
+                    content=  content,
+                    username= username,
+                    avatar_url= avatar_url,
+                    allowed_mentions=allowed_mentions,
+                    files=files,
+                    embed = embed,
+                    wait=True
+                )
+            
+            messagesData["webhooksent"].append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id})
+
+        except KeyError as k:
+            log.warning(k)
+        except Exception as e:
+            log.warning(e)
+
     async def process_edit_message(self, message: discord.Message, webhook : Webhook, message_id, messageType):
         try:
             content = "*[message deleted by source]*"
@@ -298,18 +325,25 @@ class EventListeners(commands.Cog):
             embeds = []
             
             if messageType == MessageTypes.UPDATE:
-                content = message.content
-                attachments = message.attachments
-                embeds = message.embeds
+                current_message = await webhook.fetch_message(message_id)
+                content = current_message.content
+                attachments = current_message.attachments
+                embeds = current_message.embeds
+
+                if message.content != current_message.content:
+                    content = message.content
+                if message.attachments != current_message.attachments:
+                    attachments = message.attachments
 
             await webhook.edit_message(
                 message_id,
-                content = content,
-                attachments=attachments if messageType == MessageTypes.UPDATE else [],
-                embeds= embeds if messageType == MessageTypes.UPDATE else []
+                content=content,
+                attachments=attachments,
+                embeds=embeds
             )
 
         except Exception as e:
+            log.warning(f"Failed to edit message {message.id}: {e}")
             log.warning(f"Failed to edit message {message.id}: {e}")
    
 

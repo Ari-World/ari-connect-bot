@@ -354,11 +354,7 @@ class Moderation(commands.Cog):
     @commands.hybrid_command(name='add_badwords', description="This command level 2 moderation access only")
     @level_required(2)
     async def Addblockwords(self,ctx, content):
-        allowed = self.ValidateUser(ctx.author.id)
 
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
         
         self.init.malicious_words.append({"content":content})
         await self.repos.malicious_words_repository.create(content)
@@ -510,11 +506,7 @@ class Moderation(commands.Cog):
     @commands.hybrid_command(name='add_lobby' , description="This command level 1 moderation access only")
     @level_required(1)
     async def AddLobbies(self, ctx, name:str, description: str ,limit:int):
-        allowed = self.ValidateUser(ctx.author.id)
-
-        if not allowed:
-            await ctx.send(embed = Embed(description="You Dont have the permission to use this command"))
-            return
+       
         
         if self.init.server_lobbies:
             for x in self.init.server_lobbies:
@@ -591,10 +583,7 @@ class Moderation(commands.Cog):
     @commands.hybrid_command(name="reloaddata" , description="This command level 1 moderation access only")
     @level_required(1)
     async def reload(self, ctx):
-        allowed = self.ValidateUser(ctx.author.id)
-        if not allowed:
-            await ctx.send(embed=Embed(description="You don't have the permission to use this command"))
-            return
+        
         await self.init.load_data(self.repos.guild_repository, self.repos.lobby_repository, self.repos.muted_repository, self.repos.malicious_urls_repository, self.repos.malicious_words_repository, self.repos.moderator_repository)
         await ctx.send(embed=Embed(description="Data Loaded"))
     
