@@ -17,5 +17,8 @@ class Dev(commands.Cog):
     These commands come loaded with every Red bot, and cover some of the most basic usage of the bot.
     """
     
-    def __init__(self) -> None:
+    def __init__(self, bot) -> None:
+        self.bot = bot
         super().__init__()
+
+    

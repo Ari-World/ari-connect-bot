@@ -15,6 +15,8 @@ from .core_commands import Core
 from .dev_commands import Dev
 from ._events import init_events
 from .cog_manager import CogManager
+from .cogs.global_chat.global_chat import GlobalChat
+from .core_commands import MyHelpCommand
 
 from core._cli import ExitCodes
 from ._driver._mongo import StaticDatabase
@@ -32,6 +34,7 @@ class Ari(commands.Bot):
         self.db = StaticDatabase
         self.token = False
         self._uptime = None
+        self.help_command = MyHelpCommand()
         self._cog_mngr = CogManager()
         
     async def start(self, token):
@@ -43,8 +46,7 @@ class Ari(commands.Bot):
     async def _pre_login(self) -> None:
         """
         This should only be run once, prior to logging in to Discord REST API.
-        """
-            
+        """ 
         init_events(self)
 
     async def setup_hook(self) -> None:
@@ -54,21 +56,26 @@ class Ari(commands.Bot):
         """
         This should only be run once, prior to connecting to Discord gateway.
         """
+        log.info("Preparing Core Commands")
         await self.add_cog(Core(self))
-        await self.add_cog(Dev())
-        log.info("Loading cogs")
-        try:
-            cogs_specs = await self._cog_mngr.find_cogs()
-            for spec in cogs_specs:
-                try:
-                    await asyncio.wait_for(self.load_extension(spec.name), 30)
-                    log.info(f"Added {spec.name}")
-                except asyncio.TimeoutError:
-                    log.exception("Failed to load package %s (timeout)", spec.name)
-                except Exception as e:
-                    log.exception("Failed to load package %s", spec.name, exc_info=e)
-        except RuntimeError as e:
-            log.error("Error finding core cogs: %s", e)
+        log.info("Preparing Dev Commands")
+        await self.add_cog(Dev(self))
+        log.info("Preparing Global chat feature")
+        await self.add_cog(GlobalChat(self))
+
+        # log.info("Loading cogs")
+        # try:
+        #     cogs_specs = await self._cog_mngr.find_cogs()
+        #     for spec in cogs_specs:
+        #         try:
+        #             await asyncio.wait_for(self.load_extension(spec.name), 30)
+        #             log.info(f"Added {spec.name}")
+        #         except asyncio.TimeoutError:
+        #             log.exception("Failed to load package %s (timeout)", spec.name)
+        #         except Exception as e:
+        #             log.exception("Failed to load package %s", spec.name, exc_info=e)
+        # except RuntimeError as e:
+        #     log.error("Error finding core cogs: %s", e)
 
     
     async def close(self):
@@ -107,6 +114,12 @@ class Ari(commands.Bot):
         raise RuntimeError(
             "Hey, we're cool with sharing info about the uptime, but don't try and assign to it please."
         )
+    
+    @commands.hybrid_command(name='help', description='Shows help information')
+    async def hybrid_help(self,ctx):
+        help_command = MyHelpCommand()
+        help_command.context = ctx
+        await help_command.command_callback(ctx)
 
   # async def on_ready(self):
   #     await self.wait_until_ready()
