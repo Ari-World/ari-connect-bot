@@ -17,7 +17,7 @@
 
 Before running all make sure that you have installed all modules that we'll be using, to do that run this command.
 ``` cmd
-pip install -r requirements. txt
+pip install -r requirements.txt
 ```
 
 After that make sure that you have a `.env `file at the same level of the `main.py`.
@@ -26,11 +26,22 @@ How do I know the values for the *.env* file?
 - To know the keys, you'll find in the config `os.getenv(<this is the key>)`
 if you have now defined the config, put those keys with corresponding values, e.g.
 ```.env
-DISCORD_API_TOKEN = <put your env file herer>
+DISCORD_API_TOKEN = 
+DISCORD_COMMAND_PREFIX = 
+MONGO_DB_URL =
 
-DISCORD_COMMAND_PREFIX = <desired prefix>
+# Logging ID
+# Make sure that all channel ID is under the guild
+LOG_GUILD_ID =
 
-MONGO_DB_URL = <mongodb datbase url>
+# Channel IDS for logging
+LOG_CHAT_ID = 
+LOG_SYSTEM_ID = 
+LOG_MOD_ID = 
+LOG_PLAYER_REPORT_ID = 
 
+CACHE_THRESHOLD = 
+
+GENERAL_LOBBY_NAME = 
 ```
 ### License
