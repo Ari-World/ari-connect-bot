@@ -174,10 +174,9 @@ class EventListeners(commands.Cog):
                                 tasks.append( self.process_message(webhook, message, messagesData, embed))
 
                             elif messageType == MessageTypes.DELETE and combined_ids:
-                                channel_obj = await self.bot.fetch_channel(channel["channel_id"])
-                                relative_message : discord.Message = await self.inti.find_messageID(channel_obj,combined_ids)
-                                
+                                relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
                                 tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+
                             elif messageType == MessageTypes.UPDATE and combined_ids:
                                 relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
                                 tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))

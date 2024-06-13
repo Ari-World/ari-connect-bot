@@ -3,7 +3,6 @@ from importlib.machinery import ModuleSpec
 from typing import List, Optional
 import pkgutil
 import importlib
-import cogs
 import logging
 
 log = logging.getLogger("cog_manager")
@@ -40,20 +39,20 @@ class CogManager:
             When no matching spec can be found.
         """
 
-        package = cogs
-        cogs_specs = []
+        # package = cogs
+        # cogs_specs = []
 
-        for importer, modname, ispkg in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
+        # for importer, modname, ispkg in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
 
-            if not ispkg:  # Skip packages, only import modules
-                log.info(modname)
-                try:
-                    mod = importlib.import_module(modname)
-                    cogs_specs.append(mod.__spec__)
-                except ImportError as e:
-                    log.error(f"Failed to import cog module '{modname}': {e}")
+        #     if not ispkg:  # Skip packages, only import modules
+        #         log.info(modname)
+        #         try:
+        #             mod = importlib.import_module(modname)
+        #             cogs_specs.append(mod.__spec__)
+        #         except ImportError as e:
+        #             log.error(f"Failed to import cog module '{modname}': {e}")
 
-        if not cogs_specs:
-            log.error("No core cogs could be found in the package.")
+        # if not cogs_specs:
+        #     log.error("No core cogs could be found in the package.")
 
-        return cogs_specs
+        # return cogs_specs

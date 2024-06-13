@@ -97,6 +97,7 @@ class Intialization:
         replied_message = next((msg for msg in fetched_messages if msg is not None), None)
         return replied_message
     
+    
     async def try_fetch_message(self, target_channel_id, data, channel):
         try:
             if data["channel"] == target_channel_id:
