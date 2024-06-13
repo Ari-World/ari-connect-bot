@@ -289,7 +289,7 @@ class Moderation(commands.Cog):
 
     # TODO: Improve Embed
     @commands.hybrid_command(name="listbadwords", description="This command level 2 moderation access only")
-    @level_required(2)
+    @level_required(3)
     async def getAllBadwords(self,ctx):
         
 
@@ -309,7 +309,7 @@ class Moderation(commands.Cog):
 
     # TODO: Improve Embed
     @commands.hybrid_command(name="listbadurls", description="This command level 2 moderation access only")
-    @level_required(2)
+    @level_required(3)
     async def getAllBadUrls(self,ctx):
         
         format_data = ""
