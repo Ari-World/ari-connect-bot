@@ -17,6 +17,7 @@ class Global(commands.Cog):
 
     # TODO: Improve Connect
     @commands.hybrid_command(name='connect', description='Link to Open World')
+    @commands.has_permissions(kick_members=True)
     async def openworldlink(self, ctx, channel: discord.TextChannel):
         
         guild_id = ctx.guild.id
@@ -194,6 +195,7 @@ class Global(commands.Cog):
             return False
         
     @commands.hybrid_command(name='unlink', description='Unlink from Open World')
+    @commands.has_permissions(kick_members=True)
     async def openworldunlink(self, ctx):
         # Initialize needed data
         guild_id = ctx.guild.id
@@ -303,6 +305,7 @@ class Global(commands.Cog):
         return embed
     
     @commands.hybrid_command(name='switch', description='Switch to a different server lobby')
+    @commands.has_permissions(kick_members=True)
     async def switch_lobby(self, ctx):
         
         guild_id = ctx.guild.id
