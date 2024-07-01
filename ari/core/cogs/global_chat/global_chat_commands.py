@@ -7,7 +7,7 @@ from discord import Embed, Webhook
 
 import discord.ext
 import discord.ext.commands
-from .global_chat_ui_views import CreateLobbyModal
+from .global_chat_ui_views import CreateLobbyModal, LobbyPagination
 from .global_chat_initialization import Intialization
 log = logging.getLogger("globalchat.commands")
 
@@ -20,7 +20,7 @@ class Global(commands.Cog):
     # Conditions: Perms to kick user
     @commands.hybrid_command(name='createlobby',with_app_command=True, description='1 lobby per server, Users need to have kick permissions to use this command')
     @commands.has_permissions(kick_members=True)
-    async def createLobby(self,ctx:discord.ext.commands.Context):
+    async def createLobby(self, ctx:commands.Context):
         
         # TODO: Check the server if it already has it's own lobby
         guild_id = ctx.guild.id
@@ -293,10 +293,10 @@ class Global(commands.Cog):
                 return await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='lobbies', description='Current Lobby description')
-    async def show_lobbies(self, ctx):
-        embed = await self.show_lobbies_embed(ctx, title="Lobbies Online",description="Some description to add")
+    async def show_lobbies(self, ctx: commands.Context):
 
-        await ctx.send(embed = embed)
+        view = LobbyPagination(self.init.lobby_data, current_page=1, sep=5, timeout=None)
+        await view.send(ctx)
 
     async def show_lobbies_embed(self, ctx, title ,description):
         lobby_data = await self.init.getAllLobby()
