@@ -9,7 +9,7 @@ log = logging.getLogger("ari.data_manager")
 basic_config = None
 
 # As for now data is saved via .env
-# TODO: Change the config to VENV or something much efficient to this 
+# TODO: Change this into a class if possible
 def load_basic_configuration():
     """Loads the basic bootstrap configuration necessary for `Config`
     to know where to store or look for data.

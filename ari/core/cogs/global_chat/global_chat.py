@@ -8,6 +8,7 @@ from .global_chat_initialization import Intialization
 from .global_chat_moderation import Moderation
 from .global_chat_repository import Repository
 from .global_chat_listeners import EventListeners
+from ..._driver._mongo import StaticDatabase
 
 # TODO: Initialization module
 # TODO: Commands module
@@ -22,7 +23,7 @@ class GlobalChat(commands.Cog):
         self.bot = bot
 
         self.init = Intialization(bot)
-        self.repos = Repository(bot,self.init, bot.db)
+        self.repos = Repository()
         self.cache_manager = CacheManager()
 
     async def cog_load(self):
@@ -31,15 +32,15 @@ class GlobalChat(commands.Cog):
         
         log.info("Initializing data from database")
         await self.init.load_data(
-            self.repos.guild_repository, 
-            self.repos.lobby_repository, 
-            self.repos.muted_repository, 
-            self.repos.malicious_urls_repository, 
-            self.repos.malicious_words_repository, 
-            self.repos.moderator_repository)
+            self.repos.lobby_repository)
+            # self.repos.lobby_repository, 
+            # self.repos.muted_repository, 
+            # self.repos.malicious_urls_repository, 
+            # self.repos.malicious_words_repository, 
+            # self.repos.moderator_repository
         
-        log.info("Preparing messages for each lobbies")
-        self.cache_manager.createCache(self.init.server_lobbies)
+        # log.info("Preparing messages for each lobbies")
+        # self.cache_manager.createCache(self.init.server_lobbies)
 
         log.info("Open world is ready")
 

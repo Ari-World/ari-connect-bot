@@ -5,15 +5,37 @@ import discord
 from discord.ext import commands
 from discord import Embed, Webhook
 
-
+import discord.ext
+import discord.ext.commands
+from .global_chat_ui_views import CreateLobbyModal
+from .global_chat_initialization import Intialization
 log = logging.getLogger("globalchat.commands")
 
 class Global(commands.Cog):
-    def __init__(self, bot : commands.Bot, initialization, repositories):
+    def __init__(self, bot : commands.Bot, initialization : Intialization, repositories):
         self.bot = bot
         self.init = initialization
         self.repos = repositories
 
+    # Conditions: Perms to kick user
+    @commands.hybrid_command(name='createlobby',with_app_command=True, description='1 lobby per server, Users need to have kick permissions to use this command')
+    @commands.has_permissions(kick_members=True)
+    async def createLobby(self,ctx:discord.ext.commands.Context):
+        
+        # TODO: Check the server if it already has it's own lobby
+        guild_id = ctx.guild.id
+        canCreate = False
+        
+        log.info(self.init.lobby_data)
+        for id in self.init.lobby_data:
+            if guild_id == id["guild_id"]:
+                canCreate = True
+            
+        if not canCreate:               
+            modal = CreateLobbyModal()
+            response = await ctx.interaction.response.send_modal(modal) 
+        else:
+            await ctx.send(embed=discord.Embed( description= ":no_entry: You have reached the limit of 1 lobby per server",  color=0xFFC0CB))
 
     # TODO: Improve Connect
     @commands.hybrid_command(name='connect', description='Link to Open World')

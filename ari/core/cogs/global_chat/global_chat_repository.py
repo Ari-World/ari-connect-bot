@@ -4,20 +4,24 @@ import logging
 import discord 
 from discord.ext import commands
 log = logging.getLogger("globalchat.repository")
+from ..._driver._mongo import StaticDatabase
+
 
 class Repository:
-    def __init__(self, bot:commands.Cog ,initialization, db):
-        self.bot = bot
-        self.init = initialization
-        self.guild_repository = GuildRepository(db)
-        self.muted_repository = MutedRepository(db)
-        self.lobby_repository = LobbyRepository(db)
-        self.malicious_urls_repository = MaliciousURLRepository(db)
-        self.malicious_words_repository = MaliciousWordsRepository(db)
-        self.moderator_repository = ModeratorRepository(db)
+    def __init__(self):
+        self.db = StaticDatabase
+        
+        self.startDatabase()
 
-        log.info("Repository Instantiated")
+    def startDatabase(self):
+        self.guild_repository = GuildConnectionRepository(self.db)
+        self.muted_repository = MutedRepository(self.db)
+        self.lobby_repository = LobbyRepository(self.db)
+        self.malicious_urls_repository = MaliciousURLRepository(self.db)
+        self.malicious_words_repository = MaliciousWordsRepository(self.db)
+        self.moderator_repository = ModeratorRepository(self.db)
 
+   
     async def create_guild_document(self, guild_id, channel : discord.TextChannel, server_name, lobby_name):
         """
         Create or update a guild document in the database and cache.
@@ -225,7 +229,6 @@ class Repository:
             #     return True
 
         
-
 class MaliciousURLRepository():
     def __init__(self, db):
         self.collection = db.malurl_collection()
@@ -313,51 +316,18 @@ class LobbyRepository():
         return await cursor.to_list(length=None)
     
     async def findOne(self,lobbyname):
-        return await self.collection.find_one({"lobbyname":lobbyname})
+        return await self.collection.find_one({"lobby_id":lobbyname})
     
     async def create(self, data):
-        if await self.findOne(data["lobbyname"]): 
-            return None
-        await self.collection.insert_one({
-            "lobbyname": data["lobbyname"],
-            "description": data["description"],
-            "limit":data["limit"]
-        })
-        return {
-            "lobbyname": data["lobbyname"],
-            "description": data["description"],
-            "limit":data["limit"]
-        }
+        res = await self.collection.insert_one(data)
+        return res
     
     async def delete(self,data):
-        if await self.findOne(data["lobbyname"]): 
-            return await self.collection.delete_one({
-                "lobbyname": data["lobbyname"],
-            })
-        else:
-            return None
-        
-    
-    async def lobbylimit(self):
-        response  = await self.findAll()
-        if response:
-            hashmap = {}
-            for data in response:
-                hashmap[data["lobbyname"]] = int(data["limit"])
+        return await self.collection.delete_one({
+            "lobby_id": data["lobby_id"],
+        })
 
-            return hashmap
-        
-
-    async def getAllLobbies(self):
-        response  = await self.findAll()
-        if response:
-            list = []
-            for data in response:
-                list.append(data)
-
-            return list
-
-class GuildRepository():
+class GuildConnectionRepository():
     def __init__(self, db):
         self.collection = db.guilds_collection()
 
@@ -369,28 +339,17 @@ class GuildRepository():
         cursor = self.collection.find()
         return await cursor.to_list(length=None)
     
-    async def findOne(self, server_id):
-        return await self.collection.find_one({"server_id": server_id})
+    async def findOne(self, lobby_id):
+        return await self.collection.find_one({"lobby_id": lobby_id})
 
     async def create(self, data):
-        if await self.findOne(data["server_id"]):  
-            return None
-        try:
-            await self.collection.insert_one({
-                "server_id": data["server_id"],
-                "server_name": data["server_name"],
-                "channels": data["channels"]
-            }) 
-            return True 
-        except:
-            return False
-
+        res =  await self.collection.insert_one(data) 
+        return res
+    
     async def delete(self,data):
-        if await self.findOne(data["server_id"]):  
-            await self.collection.delete_one({"server_id": data["server_id"]})  # Delete the guild document
-            return True
-        else:
-            return False  
+        await self.collection.delete_one({"lobby_id": data["lobby_id"]})  # Delete the guild document
+        
+         
         
     async def update(self,data):
         if await self.findOne(data["server_id"]):  

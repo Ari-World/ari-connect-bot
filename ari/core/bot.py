@@ -19,7 +19,6 @@ from .cogs.global_chat.global_chat import GlobalChat
 from .core_commands import MyHelpCommand
 
 from core._cli import ExitCodes
-from ._driver._mongo import StaticDatabase
 log = logging.getLogger("ari")
 
 class _NoOwnerSet(RuntimeError):
@@ -31,7 +30,6 @@ class Ari(commands.Bot):
         self._shutdown_mode = ExitCodes.CRITICAL
         super().__init__(command_prefix= kwargs["prefix"], intents=Intents.all())
         self.synced = False
-        self.db = StaticDatabase
         self.token = False
         self._uptime = None
         self.help_command = MyHelpCommand()

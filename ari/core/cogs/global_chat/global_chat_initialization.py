@@ -43,24 +43,18 @@ class Intialization:
 
     async def load_data(
             self,
-            guild_repository,
-            lobby_repository,
-            muted_repository,
-            malicious_urls_repository,
-            malicious_words_repository,
-            moderator_repository):
+            lobby_repository,):
         
-        self.guild_data  = await guild_repository.findAll()
-        
-        self.server_lobbies = await lobby_repository.findAll()
+        self.lobby_data = await lobby_repository.findAll()
 
-        self.muted_users = await muted_repository.findAll()
+        log.info(self.lobby_data)
+        # self.muted_users = await muted_repository.findAll()
 
-        self.malicious_urls = await malicious_urls_repository.findAll()
+        # self.malicious_urls = await malicious_urls_repository.findAll()
 
-        self.malicious_words = await malicious_words_repository.findAll()
+        # self.malicious_words = await malicious_words_repository.findAll()
 
-        self.moderator = await moderator_repository.findAll()
+        # self.moderator = await moderator_repository.findAll()
 
 
         # All Functions that needs this data / a helper functions will be put here

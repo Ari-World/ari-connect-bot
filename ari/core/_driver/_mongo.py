@@ -40,7 +40,7 @@ class StaticDatabase:
 
     @classmethod
     def guilds_collection(cls):
-        return cls.get_db()['open_world']
+        return cls.get_db()['connections']
 
     @classmethod
     def muted_collection(cls):
