@@ -2,6 +2,7 @@
 ## View
 import asyncio
 import logging
+from typing import List
 import discord
 from discord import ui
 from discord.ext import commands
@@ -12,9 +13,9 @@ log = logging.getLogger("globalchat.view")
 
 
 class CreateLobbyModal(discord.ui.Modal):
-    def __init__(self):
+    def __init__(self, lobby_data : List):
         super().__init__(title='Create Lobby')  # Properly initialize the base class with the title
-
+        self.lobby_data  = lobby_data
         self.data = {
             "title": "",
             "description": "",
@@ -58,7 +59,10 @@ class CreateLobbyModal(discord.ui.Modal):
         self.data["owner_id"] = interaction.user.id
         
         db = Repository()
-        await db.lobby_repository.create(self.data)
+        res = await db.lobby_repository.create(self.data)
+        self.data['_id'] = res.inserted_id
+        # Add the id
+        self.lobby_data.append(self.data)
 
         # Creating connection data
         webhook = await channel.create_webhook(name=self.name.value)
@@ -68,7 +72,7 @@ class CreateLobbyModal(discord.ui.Modal):
             "webhook": webhook.url,
             "guild_name": interaction.guild.name
         }
-
+        
         await db.guild_repository.create(self.connection)
         # Sending a information for created lobby
         topics = ""
@@ -99,10 +103,41 @@ class LobbyPagination(discord.ui.View):
 
     async def send(self, ctx: commands.Context):
         self.message = await ctx.send(view=self)
-        await self.update_message(self.get_current_page_data())
+        await self.update_message(self.data[:self.sep])
 
     
-    
+    def create_embed(self, data):
+        log.info(data)
+        embed = discord.Embed(title=f"Open Lobbies", color=0xFFC0CB)
+
+        embed.set_footer(text=f"page {self.current_page} / {int(len(self.data) / self.sep) + 1}", icon_url=self.message.author.avatar.url)
+        embed.add_field(
+            name="Checkout the following commands!", 
+            inline=False,
+            value= 
+                "`/global_show <lobbycode>` To view more about the lobby\n"
+                "`/connect <lobbycode>` Join the lobby and have a chat\n\n"
+                "Visit the website search more lobby: [Website](https://ariconnect.vercel.app/)"
+        )
+        
+        for item in data:
+            limit = 1
+            topics = ""
+            for x in item['topics']:
+                if limit > 5:
+                    break
+                else:
+                    topics += f"`{x}` "
+                    limit = limit + 1
+
+            embed.add_field(
+                name=item['title'], 
+                inline=False, 
+                value=
+                f"{topics}\n"
+                f"Lobby code: {item['lobby_id']}"
+                )
+        return embed
 
     async def update_message(self,data):
         self.update_buttons()

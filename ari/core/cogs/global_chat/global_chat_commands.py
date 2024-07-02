@@ -22,7 +22,6 @@ class Global(commands.Cog):
     @commands.has_permissions(kick_members=True)
     async def createLobby(self, ctx:commands.Context):
         
-        # TODO: Check the server if it already has it's own lobby
         guild_id = ctx.guild.id
         canCreate = False
         
@@ -32,11 +31,42 @@ class Global(commands.Cog):
                 canCreate = True
             
         if not canCreate:               
-            modal = CreateLobbyModal()
+            modal = CreateLobbyModal(self.init.lobby_data)
             response = await ctx.interaction.response.send_modal(modal) 
         else:
             await ctx.send(embed=discord.Embed( description= ":no_entry: You have reached the limit of 1 lobby per server",  color=0xFFC0CB))
 
+    # Making this dynamic and able to edit the website
+    @commands.hybrid_command(name='lobby_show', description="Shows more information of the lobby using the code")
+    async def showlobbyData(self, ctx: commands.Context, lobby_id: str):
+
+        found = None
+        for id in self.init.lobby_data:
+            if lobby_id == id['lobby_id']:
+                found = id
+                break
+        
+        owner: discord.User = await discord.Client.fetch_user(self.bot, found['owner_id'])
+        if not found:
+            await ctx.send(embed=Embed(description="Lobby not found",  color=0xFFC0CB))
+
+        topics = ""
+        for data in  found["topics"]:
+            topics += f"`{data}` "
+
+        embed = discord.Embed(
+            title= found['title'], 
+            description="> **Connections:** `1/20` \n"
+                        f"> **Lobby code:** {found['lobby_id']}",
+            color=0xFFC0CB
+        )
+
+        embed.add_field(name="Topics", value=topics, inline=False)
+        embed.add_field(name="Description", value=found['description'], inline=False)
+        embed.set_footer(text=f"Placeholder text",icon_url=owner.avatar.url)
+        
+        await ctx.send(embed=embed)
+    
     # TODO: Improve Connect
     @commands.hybrid_command(name='connect', description='Link to Open World')
     @commands.has_permissions(kick_members=True)
