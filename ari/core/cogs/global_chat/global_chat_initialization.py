@@ -7,7 +7,7 @@ import re
 from discord import Embed
 import discord
 from discord.ext import commands
-
+from typing import List
 from .global_chat_listeners import MessageTypes
 
 from ...data_mananger import *
@@ -43,11 +43,12 @@ class Intialization:
 
     async def load_data(
             self,
-            lobby_repository,):
+            lobby_repository,
+            guild_repository):
         
-        self.lobby_data = await lobby_repository.findAll()
+        self.lobby_data: List = await lobby_repository.findAll()
+        self.connection: List = await guild_repository.findAll()
 
-        log.info(self.lobby_data)
         # self.muted_users = await muted_repository.findAll()
 
         # self.malicious_urls = await malicious_urls_repository.findAll()
@@ -60,6 +61,14 @@ class Intialization:
         # All Functions that needs this data / a helper functions will be put here
     # More Generalize functions that speicifcs such as validating users if its a mode
     
+    def get_lobby_length(self, lobby_id):
+        count = 0
+        for lobby in self.connection:
+            if lobby['lobby_id'] == lobby_id:
+                count += 1
+        return count
+    
+
     def find_guild(self, guild_id: int, channel_id: int, tag: str = None):
         """
         Find a guild in the cached guild data by guild_id and channel_id.

@@ -67,62 +67,70 @@ class Global(commands.Cog):
         
         await ctx.send(embed=embed)
     
-    # TODO: Improve Connect
+    
     @commands.hybrid_command(name='connect', description='Link to Open World')
     @commands.has_permissions(kick_members=True)
-    async def openworldlink(self, ctx, channel: discord.TextChannel):
+    async def openworldlink(self, ctx : commands.Context, lobby_id: str = None):
         
-        guild_id = ctx.guild.id
-        channel_id = channel.id
-        guild_name = ctx.guild.name
+        # Validate Users
+        guild = ctx.guild
+        channel = ctx.channel
 
-        embed = Embed(
-            description="Preparing ...",
-            color=0x7289DA 
-        )
-        sent_message = await ctx.send(embed=embed)
-        existing_guild = self.init.find_guild(guild_id, channel_id)
+        existing_guild = None
+        for con in self.init.connection:
+            if(con['channel_id'] == channel.id and con['guild_id'] == guild.id):
+                existing_guild = con
+
         if existing_guild:
             embed = Embed(
                 title=":no_entry: Your channel is already registered for Open World Chat",
                 description="Type `a!unlink` to unlink your Open World\n*This will only unlink from the Open World channel*",
                 color=0xFF0000  # Red color
             )
-            await sent_message.edit(embed=embed)
+            await ctx.send(embed=embed)
             return 
+        
+        # Validate if lobby_id is provided
+        if lobby_id:
+            isValid = await self.validateLobby(lobby_id)
 
-        # TODO: Auto Connect Feature
-        # Shows an embed that asks the user to proceed or explore more
-        #=====================================
-        autoconnect, lobby = await self.handle_auto_connect(ctx)
-        
-        if not autoconnect:
-            lobby = await self.handle_lobby_selection(ctx)
-            if not lobby:
-                return
-        
-        # Logging in process
-        steps = [
-            "Logging in ...",
-            "Linking into Open World Server...",
-            f"Confirming Connection with World - `{guild_id}`...",
-            f"Fetching Data from World - `{guild_id}`..."
-        ]
-        
-        for step in steps:
-            embed.description = step
-            await sent_message.edit(embed=embed)
-            await asyncio.sleep(1)
-        
+            if not isValid:
+                embed = Embed(
+                    title=":no_entry: The lobby ID that you have provided is not available",
+                    color=0xFF0000  # Red color
+                    )
+                await ctx.send(embed=embed)
+                return 
+            # else if the lobby id is not provided then we'll do the auto connect feature
+        else:
+            # TODO: Implement a auto connect feautre
+            isValid = await self.validateLobby(self.init.generalLobby)
+            # This should always be true
 
-        await self.repos.create_guild_document(guild_id, channel, guild_name, lobby)
+        # Connect it
+
+       
+        webhook = await channel.create_webhook(name=isValid['title'])
+        data = {
+            "lobby_id": lobby_id,
+             "channel_id": channel.id,
+             "webhook": webhook.url,
+             "guild_id": guild.id,
+             "guild_name": guild.name
+        }
+        res = await self.repos.guild_repository.create(data)
+        data['_id'] =res.inserted_id
+        
+        self.init.connection.append(data)
+
+        # Send a success message if its successfull
         embed = Embed(
-            description=f':white_check_mark: **LINK START!! You are now connected to {lobby}**',
+            description=f':white_check_mark: **LINK START!! You are now connected to {isValid['title']}**',
             color=0x7289DA 
         )
-        await sent_message.edit(embed=embed)
+        
+        await ctx.send(embed=embed)
         await asyncio.sleep(1)
-        # sends a successful message
         embed = Embed(
             title="Thank you for linking with Open World Server!",
             description= self.init.openworldThanksMessage,
@@ -133,131 +141,30 @@ class Global(commands.Cog):
 
         await message.add_reaction('✅')
 
-        await self.on_join_announce(ctx,guild_name, lobby)
+        # TODO: Update this soon
+        # await self.on_join_announce(ctx,guild_name, lobby)
        
-    async def handle_auto_connect(self,ctx):
-        lobbyData = self.init.generalLobby
-        isValid = await self.validateLobby(lobbyData)
-        
-        if not isValid:
-            return False, None
-        
-        embed = Embed(
-            description= f":warning: **You are about to connect to {lobbyData}**",
-            color = 0x7289DA 
-        )
-        choice = DynamicChoice(ctx.message.author, ["Proceed"," Explore More"])
-        confirm_message = await ctx.send(embed=embed,view=choice)
-        try:
-            await asyncio.wait_for(choice.wait(), timeout=60)
-        except asyncio.TimeoutError:
-            await ctx.send("You didn't respond within the specified time.")
-            await confirm_message.delete()
-            return
-        
-        await confirm_message.delete()
-        if choice.value == "Proceed":
-            return True, lobbyData
-        else:
-            return False, None
-        
-
-    async def handle_lobby_selection(self,ctx):
-       
-        while True:
-        
-            embed = await self.show_lobbies_embed(ctx,"Available Lobbies", description=None)
-            lobby =ConnectDropDown(ctx.message.author,self.init.server_lobbies)
-            
-            message_drp = await ctx.send(view=lobby,embed=embed)
-            try:
-                await asyncio.wait_for(lobby.wait(), timeout=60)
-            except asyncio.TimeoutError:
-                await ctx.send("You didn't respond within the specified time.")
-                await message_drp.delete()
-                return
-            
-            selected_lobby = lobby.lobby
-            await message_drp.delete()
-        
-
-            for lobby in self.init.server_lobbies:
-                if lobby["lobbyname"] == selected_lobby:
-                    description = lobby["description"]
-                    
-            description = next((lobby["description"] for lobby in self.init.server_lobbies if lobby["lobbyname"] == selected_lobby), "No description available")
-            guilds = self.init.getAllGuildUnderLobby(selected_lobby)
-
-            data = "\n\n".join([f"**{i+1}**) **{guild['server_name']}**" for i, guild in enumerate(guilds)]) or "There's no guild connected to this lobby"
-            choice_view = DynamicChoice(ctx.message.author, ["Confirm","Cancel"])
-
-            embed = Embed(
-                title= selected_lobby,
-                description=description,
-                color=0x7289DA
-            )
-
-            
-            embed.add_field(name="Guilds",value=data)
-            select_lobby_embed = await ctx.send(embed = embed, view=choice_view)
-            
-            try:
-                await asyncio.wait_for(choice_view.wait(), timeout=60)
-            except asyncio.TimeoutError:
-                await ctx.send("You didn't respond within the specified time.")
-                await select_lobby_embed.delete()
-                return
-                        
-            await select_lobby_embed.delete()
-
-            if choice_view.value != "Confirm":
-                continue    
-            # Validate the lobby limit
-            isValid = await self.validateLobby(selected_lobby)
-            
-            if isValid:
-                return selected_lobby
-            else:
-                embed = Embed(
-                title= "",
-                description=f"The {selected_lobby} is currently full, choose another lobby to connect.",
-                color=0x7289DA
-                )
-                await ctx.send(embed = embed)
-                
-        
     async def validateLobby(self, selected_lobby):
-        lobbyData = await self.init.getAllLobby()
-        limit = None  
-        for data in self.init.server_lobbies:
-            if data["lobbyname"] == selected_lobby:
-                limit = data.get("limit") 
-                break
-
-        available = False
-        if limit is not None:
-            for x in lobbyData:
-                if x.get("name") == selected_lobby and x.get("connection", 0) < limit:  # Adjust condition check
-                    available = True
-                    break
-
-        if available:
-            return True  
-        else:
-            return False
+        for lobby in self.init.lobby_data:
+            if selected_lobby == lobby['lobby_id']:
+                return lobby
+        return None
         
     @commands.hybrid_command(name='unlink', description='Unlink from Open World')
     @commands.has_permissions(kick_members=True)
-    async def openworldunlink(self, ctx):
-        # Initialize needed data
-        guild_id = ctx.guild.id
-        channel_id = ctx.channel.id
+    async def openworldunlink(self, ctx: commands.Context):
+        guild = ctx.guild
+        channel = ctx.channel
+
+        existing_guild = None
+        for con in self.init.connection:
+            if con['guild_id'] == guild.id and con['channel_id'] == channel.id:
+                existing_guild = con
         
-        # checks if the channel exists in the database
-        existing_guild = self.init.find_guild(guild_id, channel_id)
         if existing_guild:
             # if it does exists, delete it from database
-            await self.repos.delete_guild_document(guild_id, channel_id)
+            await self.repos.guild_repository.delete(existing_guild)
+            self.init.connection.remove(existing_guild)
             await ctx.send(
                 embed=discord.Embed(
                     description=":white_check_mark: **Unlinked from Open World Chat**",
@@ -273,54 +180,60 @@ class Global(commands.Cog):
     
     #Get Current Lobby
     @commands.hybrid_command(name='current', description='Current Lobby description')
-    async def current_lobby(self, ctx):
-        guild_id = ctx.guild.id
-        channel_id = ctx.channel.id
+    async def current_lobby(self, ctx: commands.Context):
 
-        guild_document = self.init.find_guild(guild_id,channel_id)
+        # find the lobby in the database
+        guild = ctx.guild
+        channel = ctx.channel
 
-        if self.init.server_lobbies:
-            if guild_document:
-
-                lobby = guild_document.get("channels",[])
-            
-                for channel in lobby:
-                    if channel["channel_id"] == channel_id:
-                        lobby_name = channel['lobby_name']
-                        limit = self.init.get_limit_server_lobby(lobby_name)
-                        description = None
-                        guilds =  self.init.getAllGuildUnderLobby(channel['lobby_name'])
-                        connection = self.init.get_lobby_count(channel['lobby_name'])
-                        # Lobby Data
-                        for lobby in self.init.server_lobbies:
-                            if lobby["lobbyname"] == lobby_name:
-                                description = lobby["description"]
-                        data = ""
-                        x = 1
-
-                        if guilds:
-                            for guild in guilds:
-                                
-                                text = f"**{x}**) **{guild['server_name']}**"
-                                data += text + "\n\n"
-                                x += 1
-                        else:
-                            data = "There's no guild connected to this lobby"
-
-                        embed = Embed(
-                            title= f"{channel['lobby_name']} - {connection}/{limit}",
-                            description= description,
-                            color= 0xFFC0CB 
-                        )
-                        embed.add_field(name="Connected:", value = data)
-                        return await ctx.send(embed=embed)
-            else:
-                embed = Embed(
-                    description=f":no_entry: **Your channel is not registered for Open World Chat**",
-                    color=0xFFC0CB
+        # Determine if connected
+        connection = None
+        for con in self.init.connection:
+            if(con['channel_id'] == channel.id and con['guild_id'] == guild.id):
+                connection = con
+                break
+        
+        if not connection:
+            await ctx.send(
+                embed=Embed(
+                    title=":no_entry: This channel is not connected to any channel",
+                    color=0xFF0000
                 )
-                
-                return await ctx.send(embed=embed)
+            )
+        
+        # Finding the lobby
+        guild_document = None
+        for lobby in self.init.lobby_data:
+            if lobby['lobby_id'] == connection['lobby_id']:
+                guild_document = lobby
+                break
+       
+        if guild_document:
+            # If found show data
+            topics = ""
+            for data in guild_document["topics"]:
+                topics += f"`{data}` "
+
+            embed = discord.Embed(
+                title= guild_document['title'], 
+                description=f"> **Connections:** `{self.init.get_lobby_length(guild_document['lobby_id'])}/{guild_document['limit']}` \n"
+                            f"> **Lobby code:** {guild_document['lobby_id']}",
+                color=0xFFC0CB
+            )
+
+            embed.add_field(name="Topics", value=topics, inline=False)
+            embed.add_field(name="Description", value=guild_document['description'], inline=False)
+            embed.set_footer(text=f"Placeholder text",icon_url=ctx.author.avatar.url)
+            
+            await ctx.send(embed=embed)
+        else:
+
+            embed = Embed(
+                description=f":no_entry: **Your channel is not registered for Open World Chat**",
+                color=0xFFC0CB
+            )
+            
+            await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='lobbies', description='Current Lobby description')
     async def show_lobbies(self, ctx: commands.Context):
@@ -328,89 +241,70 @@ class Global(commands.Cog):
         view = LobbyPagination(self.init.lobby_data, current_page=1, sep=5, timeout=None)
         await view.send(ctx)
 
-    async def show_lobbies_embed(self, ctx, title ,description):
-        lobby_data = await self.init.getAllLobby()
-        formatted_data = ""
-
-        for data in lobby_data:
-            limit = self.init.get_limit_server_lobby(data["name"])
-            connection = data['connection']
-            
-            if connection > limit - 5:
-                # If the number of connections is close to the limit, display 🔴
-                text = f"\n🔴 **{data['name']}**\n {connection}/{limit} guilds connected"
-            elif connection > limit - 10:
-                # If the number of connections is moderate, display 🟠
-                text = f"\n🟠 **{data['name']}**\n {connection}/{limit} guilds connected"
-            else:
-                # If the number of connections is low, display 🟢
-                text = f"\n🟢 **{data['name']}**\n {connection}/{limit} guilds connected"
-            
-            formatted_data += text + "\n"
-
-        embed = Embed(
-            title= title,
-            description= description,
-            color=0x7289DA 
-        )
-        embed.add_field(name="Public Lobbies",value=formatted_data)
-        return embed
-    
     @commands.hybrid_command(name='switch', description='Switch to a different server lobby')
     @commands.has_permissions(kick_members=True)
-    async def switch_lobby(self, ctx):
+    async def switch_lobby(self, ctx: commands.Context, lobby_id : str):
         
-        guild_id = ctx.guild.id
-        channel_id = ctx.channel.id
+        # Validate
+        guild = ctx.guild
+        channel = ctx.channel
 
-        # Validation
-        existing_guild = self.init.find_guild(guild_id, channel_id)
-        
-        if not existing_guild:
+        # Get the connection
+        connection = None
+        for con in self.init.connection:
+            if con['channel_id'] == channel.id and con['guild_id'] == guild.id:
+                connection= con
+                break
+
+        lobby_document = None
+        for lobby in self.init.lobby_data:
+            if lobby['lobby_id'] == connection['lobby_id']:
+                lobby_document = lobby
+                break
+
+        # Validation for lobby_id
+        lobby_exist = None
+        for lobby in self.init.lobby_data:
+            if lobby['lobby_id'] == lobby_id:
+                lobby_exist = lobby
+
+        # Check if the id is provided 
+        if connection and lobby_exist:
+
+            # Delete the current connection
+            await self.repos.guild_repository.delete(connection)
+            self.init.connection.remove(connection)
+
+            # Create new connection
+            webhook = await channel.create_webhook(name=lobby_document['title'])
+            
+            data = {
+                "lobby_id": lobby_id,
+                "channel_id": channel.id,
+                "webhook": webhook.url,
+                "guild_id": guild.id,
+                "guild_name": guild.name
+            }
+
+            res = await self.repos.guild_repository.create(data)
+            data['_id'] =res.inserted_id
+            self.init.connection.append(data)
+
+            embed = Embed(
+                description=f":white_check_mark: **You have switched to {lobby_exist['title']}**",
+                color=0x7289DA 
+            )
+        else:
             embed = Embed( 
                 description=f":no_entry: **Your channel is not registered for Open World Chat**",
                 color=0x7289DA 
-            )  
+            )
             await ctx.send(embed=embed)
             return
         
-        for channel in existing_guild["channels"]:
-            if channel["channel_id"] == channel_id:
-                connection_data = channel
-
-        # Confirmation
-        embed = Embed(
-            description= ":warning: **Are you sure do you want to leave?**",
-            color = 0x7289DA 
-        )
-        choice = DynamicChoice(ctx.message.author, ["Confirm","Cancel"])
-        confirm_message = await ctx.send(embed=embed,view=choice)
-
-        try:
-            await asyncio.wait_for(choice.wait(), timeout=60)
-        except asyncio.TimeoutError:
-            await ctx.send("You didn't respond within the specified time.")
-            await confirm_message.delete()
-            raise Exception("")
-        
-        await confirm_message.delete()
-
-        if choice.value == "Cancel":
-            return
-        
-        lobby = await self.handle_lobby_selection(ctx)
-        if not lobby:
-            return
-
-        await self.repos.update_guild_lobby(guild_id, channel_id, lobby)
-
-        embed = Embed(
-            description=f":white_check_mark: **You have switched to {lobby}**",
-            color=0x7289DA 
-        )
-
         await ctx.send(embed=embed)
-        await self.on_join_announce(ctx, ctx.guild.name, lobby)
+        # await self.on_join_announce(ctx, ctx.guild.name, lobby)
+       
        
               
 

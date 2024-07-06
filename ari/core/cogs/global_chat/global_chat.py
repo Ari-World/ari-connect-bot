@@ -32,7 +32,8 @@ class GlobalChat(commands.Cog):
         
         log.info("Initializing data from database")
         await self.init.load_data(
-            self.repos.lobby_repository)
+            self.repos.lobby_repository,
+            self.repos.guild_repository)
             # self.repos.lobby_repository, 
             # self.repos.muted_repository, 
             # self.repos.malicious_urls_repository, 
