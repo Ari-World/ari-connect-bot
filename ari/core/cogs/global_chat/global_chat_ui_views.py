@@ -70,6 +70,7 @@ class CreateLobbyModal(discord.ui.Modal):
             "lobby_id": lobby_code,
             "channel_id": channel.id,
             "webhook": webhook.url,
+            "guild_id": interaction.guild.id,
             "guild_name": interaction.guild.name
         }
         

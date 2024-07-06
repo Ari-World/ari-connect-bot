@@ -9,11 +9,10 @@ from enum import Enum
 import re
 import aiohttp
 import discord
+import logging
+from typing import List
 from discord.ext import commands
 from discord import Embed, HTTPException, Webhook
-import logging
-
-
 log = logging.getLogger("globalchat.listener")
 
 
@@ -25,12 +24,12 @@ class MessageTypes(Enum):
 
 
 class EventListeners(commands.Cog):
-    def __init__(self, bot :commands.Bot, init, cacheManager):
+    def __init__(self, bot :commands.Bot, init , cacheManager):
         self.bot = bot
         self.init = init
         self.cache_manager = cacheManager
 
-
+    # Delete method
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
         if message.id in self.init.bypass_delete_listener:
@@ -48,6 +47,7 @@ class EventListeners(commands.Cog):
         
         await self.validate_webhook_channel(message, guild_document, channel_id, MessageTypes.DELETE)
 
+    # Delete
     @commands.Cog.listener()
     async def on_message_edit(self , before: discord.Message, after: discord.Message):
         if after.content.startswith(self.bot.command_prefix) or before.author.bot:
@@ -72,126 +72,128 @@ class EventListeners(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+
         if message.content.startswith(self.bot.command_prefix) or message.author.bot:
             return
 
         guild_id = message.guild.id
         channel_id = message.channel.id
+        connection = None
+
+        log.info(self.init.connection)
+        for con in self.init.connection:
+            if con['guild_id'] == guild_id and con['channel_id'] == channel_id:
+                connection = con
+                break
         
-        guild_document = self.init.find_guild(guild_id, channel_id)
-        if not guild_document:
+        if not connection:
             return
+
+        # TODO: validate if webhook still exists
+        if connection:
+            pass
         
-        sender = self.bot.get_user(message.author.id)
-        muted = self.init.isUserBlackListed(message.author.id)
-        if muted:
-            await message.delete()
-            await sender.send(embed=Embed(description=f"You have been muted for {muted['reason']}"))
-            return
+        # TODO: Moderation if user is muted or something
+
+        # sender = self.bot.get_user(message.author.id)
+        # muted = self.init.isUserBlackListed(message.author.id)
+        # if muted:
+        #     await message.delete()
+        #     await sender.send(embed=Embed(description=f"You have been muted for {muted['reason']}"))
+        #     return
         
-        status, word = self.init.contains_malicious_url(message.content)
-        if status:
-            await message.delete()
-            await message.author.send(embed = Embed(description="Your message contains malicious content. "
-                                                                "Please refrain from using inappropriate language or sharing harmful links.\n\n"
-                                                                f" Word: {word}"))    
-            await self.init.log_report(message, "Sending Malicious Content")
-            return
+        # status, word = self.init.contains_malicious_url(message.content)
+        # if status:
+        #     await message.delete()
+        #     await message.author.send(embed = Embed(description="Your message contains malicious content. "
+        #                                                         "Please refrain from using inappropriate language or sharing harmful links.\n\n"
+        #                                                         f" Word: {word}"))    
+        #     await self.init.log_report(message, "Sending Malicious Content")
+        #     return
+        
         
         if message.type == discord.MessageType.reply:
             messageType = MessageTypes.REPLY
         else:
             messageType = MessageTypes.SEND
+
+        await self.send_to_matching_lobbies(message,connection, messageType)
         
-        await self.validate_webhook_channel(message, guild_document, channel_id, messageType)
-
-
-    async def validate_webhook_channel(self, message: discord.Message, guild_document, channel_id, messageType: MessageTypes,msg2 = None):
-        # This function determines if where lobby should the message be sent    
-        # Redundant need improvement 
-        for channel in guild_document["channels"]:
-            if channel["channel_id"] == channel_id and channel["webhook"]:    
-                await self.send_to_matching_lobbies(message, channel['lobby_name'], channel_id, messageType, msg2)
-            elif not channel["webhook"]:
-                await message.channel.send("Re-register this channel for webhook registration")
-
-    async def send_to_matching_lobbies(self, message: discord.Message, lobby_name, channel_id, messageType: MessageTypes, msg2 = None):
+    async def send_to_matching_lobbies(self, message: discord.Message, connection, messageType: MessageTypes):
         # Prepare messagesData
         if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
-            messagesData = {"source": message.id, "channel": message.channel.id, "author" : message.author.id,"webhooksent": []}
-            embed = None
-            source_data = None
+            messagesData = {"source": message.id, "channel": message.channel.id, "author" : message.author.id,"webhooksent": [] }
 
-            if message.reference and messageType == MessageTypes.REPLY:
-                embed = await self.prepare_reply_embed(message, lobby_name)
+            # if message.reference and messageType == MessageTypes.REPLY:
+            #     embed = await self.prepare_reply_embed(message, lobby_name)
 
         # Handles Delete and Update messages
-        if messageType == MessageTypes.DELETE or messageType == MessageTypes.UPDATE:
-            # Preparing Message_ID to use for delete / edit funciton
+        # if messageType == MessageTypes.DELETE or messageType == MessageTypes.UPDATE:
+        #     # Preparing Message_ID to use for delete / edit funciton
 
-            # Getting source message in the cache
-            source_data = self.cache_manager.find_source_data(message.id, lobby_name)
+        #     # Getting source message in the cache
+        #     source_data = self.cache_manager.find_source_data(message.id, lobby_name)
 
-            # Combineing Message id since source_id is separated in to 
-            # its webhooks send messages
-            try:
-                combined_ids = [
-                    {"channel": source_data["channel"], 
-                     "messageId": source_data["source"], 
-                     "author" : source_data["author"]
-                     }]
+        #     # Combineing Message id since source_id is separated in to 
+        #     # its webhooks send messages
+        #     try:
+        #         combined_ids = [
+        #             {"channel": source_data["channel"], 
+        #              "messageId": source_data["source"], 
+        #              "author" : source_data["author"]
+        #              }]
                 
-                combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
-            except TypeError as e:
-                log.info(e)
-            except UnboundLocalError as e:
-                log.info(e)
+        #         combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
+        #     except TypeError as e:
+        #         log.info(e)
+        #     except UnboundLocalError as e:
+        #         log.info(e)
 
-            if msg2:
-                await self.init.chat_log_report(message, MessageTypes.UPDATE, lobby_name, channel_id,msg2)
-            else:
-                await self.init.chat_log_report(message, MessageTypes.DELETE, lobby_name, channel_id)
+        #     if msg2:
+        #         await self.init.chat_log_report(message, MessageTypes.UPDATE, lobby_name, channel_id,msg2)
+        #     else:
+        #         await self.init.chat_log_report(message, MessageTypes.DELETE, lobby_name, channel_id)
 
         async with aiohttp.ClientSession() as session:
             tasks = []
 
-            for document in self.init.guild_data:
-                channels = document["channels"]
-                for channel in channels:
-                    # Checks if its not the guild and the channels via id basically filtered out the current channel
-                    if channel["channel_id"] != channel_id and channel["lobby_name"] == lobby_name:
+            for document in self.init.connection:
+                    
+                    if document["channel_id"] != message.channel.id and document["lobby_id"] == connection['lobby_id']:
                         
                         try:
                             # webhook = self.create_webhook(channel["webhook"], session, messageType)
-                            webhook  = Webhook.from_url(channel["webhook"], session=session)
+                            webhook  = Webhook.from_url(document["webhook"], session=session)
 
                             if messageType == MessageTypes.SEND:
                                 tasks.append(self.process_message(webhook,  message, messagesData))
                                 
-                            elif messageType == MessageTypes.REPLY: # Remove and combined_ids
-                                # Reply Jump message
-                                # view = await self.handle_reply(combined_ids, channel["channel_id"] )
-                                tasks.append( self.process_message(webhook, message, messagesData, embed))
+                            # elif messageType == MessageTypes.REPLY: # Remove and combined_ids
+                            #     # Reply Jump message
+                            #     # view = await self.handle_reply(combined_ids, channel["channel_id"] )
+                            #     tasks.append( self.process_message(webhook, message, messagesData, embed))
 
-                            elif messageType == MessageTypes.DELETE and combined_ids:
-                                relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
-                                tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+                            # elif messageType == MessageTypes.DELETE and combined_ids:
+                            #     relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
+                            #     tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
 
-                            elif messageType == MessageTypes.UPDATE and combined_ids:
-                                relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
-                                tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+                            # elif messageType == MessageTypes.UPDATE and combined_ids:
+                            #     relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
+                            #     tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
                         except HTTPException as e:
-                            if e.status == 429:
-                                retry_after = int(e.response.headers['Retry-After'])
-                                await asyncio.sleep(retry_after)
-                                tasks.append(self.send_to_matching_lobbies(message, lobby_name, channel_id, messageType, msg2))
+                            pass
+                            log.warning(e)
+                            # if e.status == 429:
+                            #     retry_after = int(e.response.headers['Retry-After'])
+                            #     await asyncio.sleep(retry_after)
+                            #     tasks.append(self.send_to_matching_lobbies(message, lobby_name, channel_id, messageType, msg2))
                         except UnboundLocalError as e:
                             log.warning(e)
 
             await asyncio.gather(*tasks)
 
             if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
-                await self.cache_manager.cache_message(lobby_name, messagesData)
+                await self.cache_manager.cache_message(connection['lobby_id'], messagesData)
 
     async def process_message(self, webhook : Webhook, message : discord.Message, messagesData, embed = None):
         try:
@@ -200,23 +202,25 @@ class EventListeners(commands.Cog):
             files = [await attachment.to_file() for attachment in message.attachments]
             
             # Generating user name
-            modIcon = None
-            for modData in self.init.moderator:
-                for mod in modData["mods"]:
-                    if mod["user_id"] == str(message.author.id):
-                        modIcon = modData["icon"]
-                        break
-            
-            if modIcon:  
-                if hasattr(message.author,'global_name') and message.author.global_name:
-                    username = f"{modIcon} {message.author.global_name} || {message.guild.name}"
-                else:
-                    username = f"{modIcon} {message.author.name} || {message.guild.name}"
+            # Handle moderator icons
+            # modIcon = None
+            # for modData in self.init.moderator:
+            #     for mod in modData["mods"]:
+            #         if mod["user_id"] == str(message.author.id):
+            #             modIcon = modData["icon"]
+            #             break
+            # # add mod icon in the 
+            # if modIcon:  
+            #     if hasattr(message.author,'global_name') and message.author.global_name:
+            #         username = f"{modIcon} {message.author.global_name} || {message.guild.name}"
+            #     else:
+            #         username = f"{modIcon} {message.author.name} || {message.guild.name}"
+            # else:
+
+            if hasattr(message.author,'global_name') and message.author.global_name:
+                username = f"{message.author.global_name} || {message.guild.name}"
             else:
-                if hasattr(message.author,'global_name') and message.author.global_name:
-                    username = f"{message.author.global_name} || {message.guild.name}"
-                else:
-                    username = f"{message.author.name} || {message.guild.name}"    
+                username = f"{message.author.name} || {message.guild.name}"    
 
             # Check if the message contains a sticker
             if message.stickers and not embed:  # If there's a sticker and embed argument is not provided

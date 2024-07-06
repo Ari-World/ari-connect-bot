@@ -48,7 +48,7 @@ class Intialization:
         
         self.lobby_data: List = await lobby_repository.findAll()
         self.connection: List = await guild_repository.findAll()
-
+        log.info(self.connection)
         # self.muted_users = await muted_repository.findAll()
 
         # self.malicious_urls = await malicious_urls_repository.findAll()

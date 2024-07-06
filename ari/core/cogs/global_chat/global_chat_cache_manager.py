@@ -19,33 +19,33 @@ class CacheManager:
     def createCache(self,lobbies):
         for lobby in lobbies:
             data =  {
-                "lobbyname": lobby["lobbyname"],
+                "lobby_id": lobby["lobby_id"],
                 "messages": []
             }
             self.cacheMessages.append(data)
 
-    def delete_cache_message(self, source_id,lobbyName):
+    def delete_cache_message(self, source_id,lobby_id):
         for message in self.cacheMessages:
-            if message["lobbyname"] == lobbyName:
+            if message["lobby_id"] == lobby_id:
                 for source in message["messages"]:
                     if source["source"] == source_id:
                         message["messages"].remove(source)
                         return 
                     
-    async def schedule_delete_cache_message(self, source_id, lobby_name):
+    async def schedule_delete_cache_message(self, source_id, lobby_id):
         
         await asyncio.sleep(self.deleteMessageThreshold)
-        self.delete_cache_message(source_id, lobby_name)
+        self.delete_cache_message(source_id, lobby_id)
 
-    async def cache_message(self, lobby_name, messagesData):
+    async def cache_message(self, lobby_id, messagesData):
         for data in self.cacheMessages:
-            if data["lobbyname"] == lobby_name:
+            if data["lobby_id"] == lobby_id:
                 data["messages"].append(messagesData)
-                await self.schedule_delete_cache_message(messagesData["source"], lobby_name)
+                await self.schedule_delete_cache_message(messagesData["source"], lobby_id)
     
-    def find_source_data(self, message_id, lobby_name):
+    def find_source_data(self, message_id, lobby_id):
         for data in self.cacheMessages:
-            if data["lobbyname"] == lobby_name:
+            if data["lobby_id"] == lobby_id:
                 for messages in data["messages"]:
                     if messages["source"] == message_id:
                         return messages
@@ -54,19 +54,19 @@ class CacheManager:
                             return messages
         return None
     
-    def findCachedLobby(self, lobbyName):
+    def findCachedLobby(self, lobby_id):
         """
             Finds the cache message 
 
             Args:
-                lobbyname (str) : The name of the specified lobby
+                lobby_id (str) : The name of the specified lobby
             
             Returns:
                 dict : the cache memory if found, otherwise none
         """
 
         for data in self.cacheMessages:
-            if lobbyName == data["lobbyname"]:
+            if lobby_id == data["lobby_id"]:
                 return data
         
         return None
