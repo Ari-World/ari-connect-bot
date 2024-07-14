@@ -16,33 +16,40 @@ class CacheManager:
 
         log.info("Caching Manager Ready")
 
-    def createCache(self,lobbies):
-        for lobby in lobbies:
-            data =  {
-                "lobby_id": lobby["lobby_id"],
-                "messages": []
-            }
-            self.cacheMessages.append(data)
+    async def createCache(self,lobby):
+        data =  {
+            "lobby_id": lobby[0]['lobby_id'],
+            "messages": []
+        }
+        self.cacheMessages.append(data)
+        await self.cache_message( lobby[0]['lobby_id'], lobby)
 
-    def delete_cache_message(self, source_id,lobby_id):
+    def delete_cache_message(self, messageData):
         for message in self.cacheMessages:
-            if message["lobby_id"] == lobby_id:
+            if message["lobby_id"] == messageData['lobby_id']:
                 for source in message["messages"]:
-                    if source["source"] == source_id:
+                    # all of this contains a [] : List
+                    # 0: []
+                    # 1: []
+                    if source[0]["message_id"] == messageData['message_id']:
                         message["messages"].remove(source)
                         return 
                     
-    async def schedule_delete_cache_message(self, source_id, lobby_id):
+    async def schedule_delete_cache_message(self, messageData):
         
         await asyncio.sleep(self.deleteMessageThreshold)
-        self.delete_cache_message(source_id, lobby_id)
+
+        self.delete_cache_message(messageData)
 
     async def cache_message(self, lobby_id, messagesData):
-        for data in self.cacheMessages:
-            if data["lobby_id"] == lobby_id:
-                data["messages"].append(messagesData)
-                await self.schedule_delete_cache_message(messagesData["source"], lobby_id)
-    
+        for message in self.cacheMessages:
+            if message["lobby_id"] == lobby_id:
+                message["messages"].append(messagesData)
+                await self.schedule_delete_cache_message(messagesData)
+                return
+        
+        await self.createCache(messagesData)
+        
     def find_source_data(self, message_id, lobby_id):
         for data in self.cacheMessages:
             if data["lobby_id"] == lobby_id:
@@ -53,7 +60,14 @@ class CacheManager:
                         if webhook["messageId"] == message_id:
                             return messages
         return None
-    
+    def find_source_by_message_id(self,message_id, lobby_id):
+        for data in self.cacheMessages:
+            if data["lobby_id"] == lobby_id:
+               for source in data['messages']:
+                   for msg in source:
+                       if msg['message_id'] == message_id:
+                           return source
+                
     def findCachedLobby(self, lobby_id):
         """
             Finds the cache message 

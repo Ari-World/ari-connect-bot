@@ -66,6 +66,7 @@ class EventListeners(commands.Cog):
             await after.author.send(embed = Embed(description="Your message contains malicious content. "
                                                               "Please refrain from using inappropriate language or sharing harmful links.\n\n"
                                                               f" Word: {word}"))    
+            
             await self.init.log_report(after, "Editing Malicious Content")
             return
         await self.validate_webhook_channel(after, guild_document, channel_id, MessageTypes.UPDATE, before)
@@ -80,12 +81,11 @@ class EventListeners(commands.Cog):
         channel_id = message.channel.id
         connection = None
 
-        log.info(self.init.connection)
         for con in self.init.connection:
             if con['guild_id'] == guild_id and con['channel_id'] == channel_id:
                 connection = con
                 break
-        
+
         if not connection:
             return
 
@@ -122,10 +122,18 @@ class EventListeners(commands.Cog):
     async def send_to_matching_lobbies(self, message: discord.Message, connection, messageType: MessageTypes):
         # Prepare messagesData
         if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
-            messagesData = {"source": message.id, "channel": message.channel.id, "author" : message.author.id,"webhooksent": [] }
-
-            # if message.reference and messageType == MessageTypes.REPLY:
-            #     embed = await self.prepare_reply_embed(message, lobby_name)
+            messageData: List = []
+            messageData.append({
+                "message_id" : message.id, 
+                "channel": message.channel.id, 
+                "author" : message.author.id,
+                "lobby_id": connection['lobby_id'],
+                "source": True
+                })
+            
+            if message.reference and messageType == MessageTypes.REPLY:
+                embed = self.prepare_reply_embed(message)
+                documents = self.cache_manager.find_source_by_message_id(message.reference.message_id, connection['lobby_id'])
 
         # Handles Delete and Update messages
         # if messageType == MessageTypes.DELETE or messageType == MessageTypes.UPDATE:
@@ -153,47 +161,44 @@ class EventListeners(commands.Cog):
         #         await self.init.chat_log_report(message, MessageTypes.UPDATE, lobby_name, channel_id,msg2)
         #     else:
         #         await self.init.chat_log_report(message, MessageTypes.DELETE, lobby_name, channel_id)
-
+        
         async with aiohttp.ClientSession() as session:
             tasks = []
 
             for document in self.init.connection:
+                
+                if document["channel_id"] != message.channel.id and document["lobby_id"] == connection['lobby_id']:
                     
-                    if document["channel_id"] != message.channel.id and document["lobby_id"] == connection['lobby_id']:
-                        
-                        try:
-                            # webhook = self.create_webhook(channel["webhook"], session, messageType)
-                            webhook  = Webhook.from_url(document["webhook"], session=session)
+                    try:
+                        webhook = await self.create_webhook(document["webhook"], session, messageType)
 
-                            if messageType == MessageTypes.SEND:
-                                tasks.append(self.process_message(webhook,  message, messagesData))
-                                
-                            # elif messageType == MessageTypes.REPLY: # Remove and combined_ids
-                            #     # Reply Jump message
-                            #     # view = await self.handle_reply(combined_ids, channel["channel_id"] )
-                            #     tasks.append( self.process_message(webhook, message, messagesData, embed))
+                        if messageType == MessageTypes.SEND:
+                            tasks.append(self.process_message(webhook,  message, messageData))
+                            
+                        elif messageType == MessageTypes.REPLY: # Remove and combined_ids
+                            reply_document = self.handle_reply(documents, message.channel.id)
+                            tasks.append( self.process_reply(webhook, message, messageData, embed, reply_document))
+                            
+                        # elif messageType == MessageTypes.DELETE and combined_ids:
+                        #     relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
+                        #     tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
 
-                            # elif messageType == MessageTypes.DELETE and combined_ids:
-                            #     relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
-                            #     tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
-
-                            # elif messageType == MessageTypes.UPDATE and combined_ids:
-                            #     relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
-                            #     tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
-                        except HTTPException as e:
-                            pass
-                            log.warning(e)
-                            # if e.status == 429:
-                            #     retry_after = int(e.response.headers['Retry-After'])
-                            #     await asyncio.sleep(retry_after)
-                            #     tasks.append(self.send_to_matching_lobbies(message, lobby_name, channel_id, messageType, msg2))
-                        except UnboundLocalError as e:
-                            log.warning(e)
+                        # elif messageType == MessageTypes.UPDATE and combined_ids:
+                        #     relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
+                        #     tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+                    except HTTPException as e:
+                        log.warning(e)
+                        # if e.status == 429:
+                        #     retry_after = int(e.response.headers['Retry-After'])
+                        #     await asyncio.sleep(retry_after)
+                        #     tasks.append(self.send_to_matching_lobbies(message, lobby_name, channel_id, messageType, msg2))
+                    except UnboundLocalError as e:
+                        log.warning(e)
 
             await asyncio.gather(*tasks)
-
-            if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
-                await self.cache_manager.cache_message(connection['lobby_id'], messagesData)
+        
+        if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
+            await self.cache_manager.cache_message(connection['lobby_id'], messageData)
 
     async def process_message(self, webhook : Webhook, message : discord.Message, messagesData, embed = None):
         try:
@@ -244,36 +249,42 @@ class EventListeners(commands.Cog):
                 embed = embed,
                 wait=True,
             )
-            messagesData["webhooksent"].append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id})
+
+            messagesData.append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id, "source": False})
         except KeyError as k:
             log.warning(k)
         except Exception as e:
-            log.warning(e)
+            print(e)
 
-    async def process_reply(self,  webhook : Webhook, message : discord.Message, messagesData, embed, jump_url):
+    async def process_reply(self,  webhook : Webhook, message : discord.Message, messagesData, embed, reply_document):
         try:
             allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
 
             files = [await attachment.to_file() for attachment in message.attachments]
             
-            # Generating user name
-            modIcon = None
-            for modData in self.init.moderator:
-                for mod in modData["mods"]:
-                    if mod["user_id"] == str(message.author.id):
-                        modIcon = modData["icon"]
-                        break
+            # # Generating user name
+            # modIcon = None
+            # for modData in self.init.moderator:
+            #     for mod in modData["mods"]:
+            #         if mod["user_id"] == str(message.author.id):
+            #             modIcon = modData["icon"]
+            #             break
             
-            if modIcon:  
-                if hasattr(message.author,'global_name') and message.author.global_name:
-                    username = f"{modIcon} {message.author.global_name} || {message.guild.name}"
-                else:
-                    username = f"{modIcon} {message.author.name} || {message.guild.name}"
+            # if modIcon:  
+            #     if hasattr(message.author,'global_name') and message.author.global_name:
+            #         username = f"{modIcon} {message.author.global_name} || {message.guild.name}"
+            #     else:
+            #         username = f"{modIcon} {message.author.name} || {message.guild.name}"
+            # else:
+            #     if hasattr(message.author,'global_name') and message.author.global_name:
+            #         username = f"{message.author.global_name} || {message.guild.name}"
+            #     else:
+            #         username = f"{message.author.name} || {message.guild.name}"    
+
+            if hasattr(message.author,'global_name') and message.author.global_name:
+                username = f"{message.author.global_name} || {message.guild.name}"
             else:
-                if hasattr(message.author,'global_name') and message.author.global_name:
-                    username = f"{message.author.global_name} || {message.guild.name}"
-                else:
-                    username = f"{message.author.name} || {message.guild.name}"    
+                username = f"{message.author.name} || {message.guild.name}" 
 
             # TODO: Sticker this is not working
             # Check if the message contains a sticker
@@ -289,9 +300,11 @@ class EventListeners(commands.Cog):
             # Allows default avatar if theres none
             avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
             
-            if jump_url:
+            if reply_document:
+                reply_message : discord.WebhookMessage = await webhook.fetch_message(reply_document['message_id'])
+                
                 view = discord.ui.View()
-                view.add_item(discord.ui.Button(label="Jump to message", style=discord.ButtonStyle.link, url= jump_url))
+                view.add_item(discord.ui.Button(label="Jump to message", style=discord.ButtonStyle.link, url= reply_message.jump_url))
                 
                 wmsg : discord.WebhookMessage  = await webhook.send(
                     content=  content,
@@ -314,13 +327,47 @@ class EventListeners(commands.Cog):
                     wait=True
                 )
             
-            messagesData["webhooksent"].append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id})
+            messagesData.append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id})
 
         except KeyError as k:
             log.warning(k)
         except Exception as e:
             log.warning(e)
+        
+    async def create_webhook(self, webhook_url, session, messageType):
+        if messageType == MessageTypes.REPLY:
+            match = re.match(r'https://discord.com/api/webhooks/(\d+)/(.+)', webhook_url)
+            if not match:
+                raise ValueError("Invalid webhook URL format")
+            webhook_id, webhook_token = match.groups()
+            webhook = discord.Webhook.partial(id=int(webhook_id), token=webhook_token, session=session, client=self.bot)
 
+        else:
+            webhook = discord.Webhook.from_url(webhook_url, session=session)
+        
+        return webhook
+
+    def prepare_reply_embed(self,replied_message : discord.Message):
+        embed = discord.Embed(description=f"{replied_message.content}", color=0xff69b4)
+        if replied_message.webhook_id:
+            author_name = replied_message.author.name
+        else:
+            author_name = f"{replied_message.author.global_name} || {replied_message.guild.name}"
+        embed.set_author(name=author_name, icon_url=replied_message.author.avatar.url)
+
+        for attachment in replied_message.attachments:
+            if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
+                embed.set_image(url=attachment.url)
+        
+        return embed
+    
+    def handle_reply(self, documents, current_channel):
+        for doc in documents:
+            if doc['channel'] == current_channel:
+                    return doc
+
+        return None
+    
     async def process_edit_message(self, message: discord.Message, webhook : Webhook, message_id, messageType):
         try:
             content = "*[message deleted by source]*"
@@ -348,41 +395,3 @@ class EventListeners(commands.Cog):
         except Exception as e:
             log.warning(f"Failed to edit message {message.id}: {e}")
             log.warning(f"Failed to edit message {message.id}: {e}")
-   
-
-    
-    
-
-    def create_webhook(self, webhook_url, session, messageType):
-        if messageType == MessageTypes.REPLY:
-            match = re.match(r'https://discord.com/api/webhooks/(\d+)/(.+)', webhook_url)
-            if not match:
-                raise ValueError("Invalid webhook URL format")
-            webhook_id, webhook_token = match.groups()
-            return discord.Webhook.partial(id=int(webhook_id), token=webhook_token, session=session, client=self.bot)
-        else:
-            return discord.Webhook.from_url(webhook_url, session=session)
-   
-             
-    async def prepare_reply_embed(self, message : discord.Message, lobby_name):
-        replied_message = await message.channel.fetch_message(message.reference.message_id)
-        embed = self.create_embed_for_message(replied_message)
-
-        return embed
-
-    def create_embed_for_message(self,replied_message : discord.Message):
-        embed = discord.Embed(description=f"{replied_message.content}", color=0xff69b4)
-        if replied_message.webhook_id:
-            author_name = replied_message.author.name
-        else:
-            author_name = f"{replied_message.author.global_name} || {replied_message.guild.name}"
-        embed.set_author(name=author_name, icon_url=replied_message.author.avatar.url)
-
-        for attachment in replied_message.attachments:
-            if attachment.filename.lower().endswith(('png', 'jpg', 'jpeg', 'gif', 'webp')):
-                embed.set_image(url=attachment.url)
-        
-        return embed
-    
-    
-    
