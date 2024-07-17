@@ -40,15 +40,25 @@ class Global(commands.Cog):
     @commands.hybrid_command(name='lobby_show', description="Shows more information of the lobby using the code")
     async def showlobbyData(self, ctx: commands.Context, lobby_id: str):
 
+        guild = ctx.guild
+        channel = ctx.channel
+
+        connection = None
+        for con in self.init.connection:
+            if(con['channel_id'] == channel.id and con['guild_id'] == guild.id):
+                connection = con
+                break
+
         found = None
         for id in self.init.lobby_data:
             if lobby_id == id['lobby_id']:
                 found = id
                 break
         
-        owner: discord.User = await discord.Client.fetch_user(self.bot, found['owner_id'])
         if not found:
             await ctx.send(embed=Embed(description="Lobby not found",  color=0xFFC0CB))
+        
+        guild_data  = await self.bot.fetch_guild(found['guild_id'])
 
         topics = ""
         for data in  found["topics"]:
@@ -56,14 +66,30 @@ class Global(commands.Cog):
 
         embed = discord.Embed(
             title= found['title'], 
-            description="> **Connections:** `1/20` \n"
-                        f"> **Lobby code:** {found['lobby_id']}",
             color=0xFFC0CB
         )
+        embed.set_thumbnail(url=str(guild_data.icon.url))
+        embed.add_field(name="Host", value=f"**Name:** {guild_data.name} \n**Members:** {guild_data.approximate_member_count}", inline=True)
+        embed.add_field(
+            name="Info", 
+            value= f"Connections: `{self.init.get_lobby_length(found['lobby_id'])}/{found['limit']}` \n"
+                    f" Lobby code: {found['lobby_id']}",
+            inline=True)
+        
+        embed.add_field(name="Description", value=found['description'], inline=False)
 
         embed.add_field(name="Topics", value=topics, inline=False)
-        embed.add_field(name="Description", value=found['description'], inline=False)
-        embed.set_footer(text=f"Placeholder text",icon_url=owner.avatar.url)
+        
+        
+        format = ""
+        for conn in self.init.connection:
+            if conn['lobby_id'] == found['lobby_id']:
+                format += f"{conn["guild_name"]}\n"
+        embed.add_field(name="Connections", value=format, inline=False)
+
+
+
+        embed.set_footer(text=f"Custom Message here")
         
         await ctx.send(embed=embed)
     
@@ -80,7 +106,7 @@ class Global(commands.Cog):
         for con in self.init.connection:
             if(con['channel_id'] == channel.id and con['guild_id'] == guild.id):
                 existing_guild = con
-
+        log.info(existing_guild)
         if existing_guild:
             embed = Embed(
                 title=":no_entry: Your channel is already registered for Open World Chat",
@@ -89,6 +115,8 @@ class Global(commands.Cog):
             )
             await ctx.send(embed=embed)
             return 
+    
+
         
         # Validate if lobby_id is provided
         if lobby_id:
@@ -101,10 +129,29 @@ class Global(commands.Cog):
                     )
                 await ctx.send(embed=embed)
                 return 
+            
+            # Check the limit
+            current = self.init.get_lobby_length(lobby_id)
+            log.info(current)
+            if current >= isValid['limit']:
+                embed = Embed(
+                    title=":no_entry: Lobby is full",
+                    color=0xFF0000  # Red color
+                )
+                await ctx.send(embed=embed)
+                return
             # else if the lobby id is not provided then we'll do the auto connect feature
         else:
             # TODO: Implement a auto connect feautre
             isValid = await self.validateLobby(self.init.generalLobby)
+            
+            if not isValid:
+                embed = Embed(
+                    title=":⚠️: Auto Connect Feature is under-development",
+                    color=0xFF0000  # Red color
+                    )
+                await ctx.send(embed=embed)
+                return 
             # This should always be true
 
         # Connect it
@@ -142,7 +189,7 @@ class Global(commands.Cog):
         await message.add_reaction('✅')
 
         # TODO: Update this soon
-        # await self.on_join_announce(ctx,guild_name, lobby)
+        await self.on_join_announce(ctx, lobby_id)
        
     async def validateLobby(self, selected_lobby):
         for lobby in self.init.lobby_data:
@@ -163,13 +210,25 @@ class Global(commands.Cog):
         
         if existing_guild:
             # if it does exists, delete it from database
+            
+            curr_channel = self.bot.get_channel(existing_guild['channel_id'])
+
+            if curr_channel:
+                webhooks = await curr_channel.webhooks()
+
+                for webhook in webhooks:
+                    if webhook.url == existing_guild['webhook']:
+                        await webhook.delete()
+                        break
+
+            # Removing the connection in the database
             await self.repos.guild_repository.delete(existing_guild)
             self.init.connection.remove(existing_guild)
             await ctx.send(
                 embed=discord.Embed(
                     description=":white_check_mark: **Unlinked from Open World Chat**",
                     color= 0x00FF00)
-                )
+                )   
         else:
             # else if doesnt 
             await ctx.send(
@@ -187,6 +246,7 @@ class Global(commands.Cog):
         channel = ctx.channel
 
         # Determine if connected
+        # Get all connection with this channel and guild id
         connection = None
         for con in self.init.connection:
             if(con['channel_id'] == channel.id and con['guild_id'] == guild.id):
@@ -202,34 +262,53 @@ class Global(commands.Cog):
             )
         
         # Finding the lobby
+        # Gets a spefic lobby data 
         guild_document = None
         for lobby in self.init.lobby_data:
             if lobby['lobby_id'] == connection['lobby_id']:
                 guild_document = lobby
                 break
-       
+             
         if guild_document:
             # If found show data
+            guild_data  = await self.bot.fetch_guild(guild_document['guild_id'])
+
             topics = ""
             for data in guild_document["topics"]:
                 topics += f"`{data}` "
 
             embed = discord.Embed(
                 title= guild_document['title'], 
-                description=f"> **Connections:** `{self.init.get_lobby_length(guild_document['lobby_id'])}/{guild_document['limit']}` \n"
-                            f"> **Lobby code:** {guild_document['lobby_id']}",
                 color=0xFFC0CB
             )
+            embed.set_thumbnail(url=str(guild_data.icon.url))
+            embed.add_field(name="Host", value=f"**Name:** {guild_data.name} \n**Members:** {guild_data.approximate_member_count}", inline=True)
+            embed.add_field(
+                name="Info", 
+                value= f"Connections: `{self.init.get_lobby_length(guild_document['lobby_id'])}/{guild_document['limit']}` \n"
+                        f" Lobby code: {guild_document['lobby_id']}",
+                inline=True)
+            
+            embed.add_field(name="Description", value=guild_document['description'], inline=False)
 
             embed.add_field(name="Topics", value=topics, inline=False)
-            embed.add_field(name="Description", value=guild_document['description'], inline=False)
-            embed.set_footer(text=f"Placeholder text",icon_url=ctx.author.avatar.url)
+            
+            
+            format = ""
+            for conn in self.init.connection:
+                if conn['lobby_id'] == guild_document['lobby_id']:
+                    format += f"{conn["guild_name"]}\n"
+            embed.add_field(name="Connections", value=format, inline=False)
+
+
+
+            embed.set_footer(text=f"Custom Message here")
             
             await ctx.send(embed=embed)
         else:
 
             embed = Embed(
-                description=f":no_entry: **Your channel is not registered for Open World Chat**",
+                description=f"⚠️ **Something went wrong when searching for the lobby**",
                 color=0xFFC0CB
             )
             
@@ -294,6 +373,8 @@ class Global(commands.Cog):
                 description=f":white_check_mark: **You have switched to {lobby_exist['title']}**",
                 color=0x7289DA 
             )
+            await ctx.send(embed=embed)
+            await self.on_join_announce(ctx, ctx.guild.name, lobby_id)
         else:
             embed = Embed( 
                 description=f":no_entry: **Your channel is not registered for Open World Chat**",
@@ -302,8 +383,7 @@ class Global(commands.Cog):
             await ctx.send(embed=embed)
             return
         
-        await ctx.send(embed=embed)
-        # await self.on_join_announce(ctx, ctx.guild.name, lobby)
+        
        
        
               
@@ -314,17 +394,15 @@ class Global(commands.Cog):
         await ctx.send(embed=discord.Embed(description=f"User has been reported"))
         await self.init.log_report_by_user(username,ctx.author.name,reason,attacment)
 
-    async def on_join_announce(self, ctx, guild_name, lobbyname):
+    async def on_join_announce(self, ctx: commands.Context, lobby_id: str):
         async with aiohttp.ClientSession() as session:
             tasks = []
 
-            for document in self.init.guild_data:
-                channels = document["channels"]
-                for channel in channels:
-                    if channel["channel_id"] != ctx.message.channel.id and lobbyname == channel["lobby_name"]:
-                        webhook = Webhook.from_url(channel["webhook"], session=session)
+            for document in self.init.connection:
+                    if document["channel_id"] != ctx.message.channel.id and lobby_id == str(document["lobby_id"]):
+                        webhook = Webhook.from_url(document["webhook"], session=session)
                         embed = Embed(color= 0xEB459F)
-                        embed.set_author(name=f"{guild_name} has joined the chat",icon_url=ctx.guild.icon.url)
+                        embed.set_author(name=f"{ctx.guild.name} has joined the chat",icon_url=ctx.guild.icon.url)
 
                         tasks.append(
                             webhook.send(
