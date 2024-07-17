@@ -127,12 +127,14 @@ class EventListeners(commands.Cog):
                 "message_id" : message.id, 
                 "channel": message.channel.id, 
                 "author" : message.author.id,
+                "source": True,
                 "lobby_id": connection['lobby_id'],
-                "source": True
                 })
             
             if message.reference and messageType == MessageTypes.REPLY:
-                embed = self.prepare_reply_embed(message)
+                log.info(message.reference)
+                reply_message = await message.channel.fetch_message(message.reference.message_id)
+                embed = self.prepare_reply_embed(reply_message)
                 documents = self.cache_manager.find_source_by_message_id(message.reference.message_id, connection['lobby_id'])
 
         # Handles Delete and Update messages
@@ -176,7 +178,7 @@ class EventListeners(commands.Cog):
                             tasks.append(self.process_message(webhook,  message, messageData))
                             
                         elif messageType == MessageTypes.REPLY: # Remove and combined_ids
-                            reply_document = self.handle_reply(documents, message.channel.id)
+                            reply_document = self.handle_reply(documents, document["channel_id"])
                             tasks.append( self.process_reply(webhook, message, messageData, embed, reply_document))
                             
                         # elif messageType == MessageTypes.DELETE and combined_ids:
@@ -250,7 +252,7 @@ class EventListeners(commands.Cog):
                 wait=True,
             )
 
-            messagesData.append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id, "source": False})
+            messagesData.append({ "channel": wmsg.channel.id ,"message_id" : wmsg.id, "author" : wmsg.author.id, "source": False})
         except KeyError as k:
             log.warning(k)
         except Exception as e:
@@ -300,9 +302,19 @@ class EventListeners(commands.Cog):
             # Allows default avatar if theres none
             avatar_url = message.author.avatar.url if message.author.avatar else message.author.default_avatar.url
             
-            if reply_document:
-                reply_message : discord.WebhookMessage = await webhook.fetch_message(reply_document['message_id'])
-                
+            # Try to fetch the reply url 
+            reply_message = None
+            try:
+                if reply_document['source'] != True:
+                    reply_message : discord.WebhookMessage = await webhook.fetch_message(reply_document['message_id'])
+                else:
+                    channel = await self.bot.fetch_channel(reply_document['channel'])
+                    reply_message = await channel.fetch_message(reply_document['message_id'])
+            except:
+                pass
+
+            if reply_message:
+               
                 view = discord.ui.View()
                 view.add_item(discord.ui.Button(label="Jump to message", style=discord.ButtonStyle.link, url= reply_message.jump_url))
                 
@@ -327,7 +339,7 @@ class EventListeners(commands.Cog):
                     wait=True
                 )
             
-            messagesData.append({ "channel": wmsg.channel.id ,"messageId" : wmsg.id, "author" : wmsg.author.id})
+            messagesData.append({ "channel": wmsg.channel.id ,"message_id" : wmsg.id, "author" : wmsg.author.id})
 
         except KeyError as k:
             log.warning(k)
@@ -364,8 +376,8 @@ class EventListeners(commands.Cog):
     def handle_reply(self, documents, current_channel):
         for doc in documents:
             if doc['channel'] == current_channel:
+                    log.info(doc)
                     return doc
-
         return None
     
     async def process_edit_message(self, message: discord.Message, webhook : Webhook, message_id, messageType):
@@ -393,5 +405,4 @@ class EventListeners(commands.Cog):
             )
 
         except Exception as e:
-            log.warning(f"Failed to edit message {message.id}: {e}")
             log.warning(f"Failed to edit message {message.id}: {e}")

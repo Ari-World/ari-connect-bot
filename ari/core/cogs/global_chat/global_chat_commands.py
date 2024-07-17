@@ -29,8 +29,9 @@ class Global(commands.Cog):
         for id in self.init.lobby_data:
             if guild_id == id["guild_id"]:
                 canCreate = True
+                break
             
-        if not canCreate:               
+        if canCreate:               
             modal = CreateLobbyModal(self.init.lobby_data)
             response = await ctx.interaction.response.send_modal(modal) 
         else:
