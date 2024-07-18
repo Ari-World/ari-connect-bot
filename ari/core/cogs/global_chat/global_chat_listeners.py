@@ -47,29 +47,40 @@ class EventListeners(commands.Cog):
         
         await self.validate_webhook_channel(message, guild_document, channel_id, MessageTypes.DELETE)
 
-    # Delete
+    # Edit
     @commands.Cog.listener()
     async def on_message_edit(self , before: discord.Message, after: discord.Message):
+
         if after.content.startswith(self.bot.command_prefix) or before.author.bot:
             return
         
         guild_id = before.guild.id
         channel_id = before.channel.id
         
-        guild_document = self.init.find_guild(guild_id, channel_id)
-        if not guild_document:
+        connection = None
+        for con in self.init.connection:
+            if con['guild_id'] == guild_id and con['channel_id'] == channel_id:
+                connection = con
+
+        if not connection:
             return
         
-        status, word = self.init.contains_malicious_url(after.content)
-        if status:
-            await after.delete()
-            await after.author.send(embed = Embed(description="Your message contains malicious content. "
-                                                              "Please refrain from using inappropriate language or sharing harmful links.\n\n"
-                                                              f" Word: {word}"))    
+        # TODO: Webhook validation
+        if connection:
+            pass
+        
+        # TODO: Moderation for global chat
+        # status, word = self.init.contains_malicious_url(after.content)
+        # if status:
+        #     await after.delete()
+        #     await after.author.send(embed = Embed(description="Your message contains malicious content. "
+        #                                                       "Please refrain from using inappropriate language or sharing harmful links.\n\n"
+        #                                                       f" Word: {word}"))    
             
-            await self.init.log_report(after, "Editing Malicious Content")
-            return
-        await self.validate_webhook_channel(after, guild_document, channel_id, MessageTypes.UPDATE, before)
+        #     await self.init.log_report(after, "Editing Malicious Content")
+        #     return
+        
+        await self.send_to_matching_lobbies(after, connection, MessageTypes.UPDATE, before)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -119,7 +130,7 @@ class EventListeners(commands.Cog):
 
         await self.send_to_matching_lobbies(message,connection, messageType)
         
-    async def send_to_matching_lobbies(self, message: discord.Message, connection, messageType: MessageTypes):
+    async def send_to_matching_lobbies(self, message: discord.Message, connection, messageType: MessageTypes, message_before = None):
         # Prepare messagesData
         if messageType == MessageTypes.REPLY or messageType == MessageTypes.SEND:
             messageData: List = []
@@ -132,37 +143,24 @@ class EventListeners(commands.Cog):
                 })
             
             if message.reference and messageType == MessageTypes.REPLY:
-                log.info(message.reference)
                 reply_message = await message.channel.fetch_message(message.reference.message_id)
                 embed = self.prepare_reply_embed(reply_message)
                 documents = self.cache_manager.find_source_by_message_id(message.reference.message_id, connection['lobby_id'])
 
         # Handles Delete and Update messages
-        # if messageType == MessageTypes.DELETE or messageType == MessageTypes.UPDATE:
-        #     # Preparing Message_ID to use for delete / edit funciton
+        if messageType == MessageTypes.DELETE or messageType == MessageTypes.UPDATE:
 
-        #     # Getting source message in the cache
-        #     source_data = self.cache_manager.find_source_data(message.id, lobby_name)
+            documents = self.cache_manager.find_source_by_message_id(message.id, connection['lobby_id'])
 
-        #     # Combineing Message id since source_id is separated in to 
-        #     # its webhooks send messages
-        #     try:
-        #         combined_ids = [
-        #             {"channel": source_data["channel"], 
-        #              "messageId": source_data["source"], 
-        #              "author" : source_data["author"]
-        #              }]
-                
-        #         combined_ids.extend(data for data in source_data["webhooksent"] if data["messageId"] != message.id)
-        #     except TypeError as e:
-        #         log.info(e)
-        #     except UnboundLocalError as e:
-        #         log.info(e)
-
-        #     if msg2:
-        #         await self.init.chat_log_report(message, MessageTypes.UPDATE, lobby_name, channel_id,msg2)
-        #     else:
-        #         await self.init.chat_log_report(message, MessageTypes.DELETE, lobby_name, channel_id)
+            if not documents:           
+                await message.channel.send(f"⚠️ Your message has passed {int(self.cache_manager.deleteMessageThreshold)/60} minutes, therefore I can't delete nor edit the message")
+                return
+            
+            # TODO: Moderation
+            # if message_before:
+            #     await self.init.chat_log_report(message, MessageTypes.UPDATE, lobby_name, channel_id,msg2)
+            # else:
+            #     await self.init.chat_log_report(message, MessageTypes.DELETE, lobby_name, channel_id)
         
         async with aiohttp.ClientSession() as session:
             tasks = []
@@ -178,22 +176,19 @@ class EventListeners(commands.Cog):
                             tasks.append(self.process_message(webhook,  message, messageData))
                             
                         elif messageType == MessageTypes.REPLY: # Remove and combined_ids
-                            reply_document = self.handle_reply(documents, document["channel_id"])
+                            reply_document = self.find_channel_in_document(documents, document["channel_id"]) if documents else None
                             tasks.append( self.process_reply(webhook, message, messageData, embed, reply_document))
                             
-                        # elif messageType == MessageTypes.DELETE and combined_ids:
-                        #     relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
-                        #     tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+                        elif messageType == MessageTypes.DELETE and documents:
+                            relative_message = self.find_channel_in_document(documents, document["channel_id"]) 
+                            tasks.append( self.process_edit_message(message, webhook, relative_message, messageType))
 
-                        # elif messageType == MessageTypes.UPDATE and combined_ids:
-                        #     relative_message : discord.Message = await self.init.find_messageID(channel["channel_id"],combined_ids)
-                        #     tasks.append( self.process_edit_message(message,webhook, relative_message.id, messageType))
+                        elif messageType == MessageTypes.UPDATE and documents:
+                            relative_message = self.find_channel_in_document(documents, document["channel_id"])
+                            tasks.append( self.process_edit_message(message, webhook, relative_message, messageType))
+
                     except HTTPException as e:
                         log.warning(e)
-                        # if e.status == 429:
-                        #     retry_after = int(e.response.headers['Retry-After'])
-                        #     await asyncio.sleep(retry_after)
-                        #     tasks.append(self.send_to_matching_lobbies(message, lobby_name, channel_id, messageType, msg2))
                     except UnboundLocalError as e:
                         log.warning(e)
 
@@ -311,9 +306,9 @@ class EventListeners(commands.Cog):
                     channel = await self.bot.fetch_channel(reply_document['channel'])
                     reply_message = await channel.fetch_message(reply_document['message_id'])
             except:
-                pass
+                reply_message = None
 
-            if reply_message:
+            if reply_document:
                
                 view = discord.ui.View()
                 view.add_item(discord.ui.Button(label="Jump to message", style=discord.ButtonStyle.link, url= reply_message.jump_url))
@@ -345,7 +340,41 @@ class EventListeners(commands.Cog):
             log.warning(k)
         except Exception as e:
             log.warning(e)
-        
+    
+    async def process_edit_message(self, message: discord.Message, webhook : Webhook, message_data, messageType):
+        try:
+            content = "*[message deleted by source]*"
+            attachments = []
+            embeds = []
+            log.info(message_data)
+            if messageType == MessageTypes.UPDATE:
+                if message_data['source'] != True:
+                    edited_message : discord.WebhookMessage = await webhook.fetch_message(message_data['message_id'])
+                else:
+                    channel = await self.bot.fetch_channel(message_data['channel'])
+                    edited_message = await channel.fetch_message(message_data['message_id'])
+
+                # This will retain if the message data ( content, attachements, embeds, etc.)
+                content = edited_message.content
+                attachments = edited_message.attachments
+                embeds = edited_message.embeds
+
+                if message.content != edited_message.content:
+                    content = message.content
+
+                if message.attachments != edited_message.attachments:
+                    attachments = message.attachments
+
+            await webhook.edit_message(
+                message_data['message_id'],
+                content=content,
+                attachments=attachments,
+                embeds=embeds
+            )
+
+        except Exception as e:
+            log.warning(f"Failed to edit message {message.id}: {e}")
+
     async def create_webhook(self, webhook_url, session, messageType):
         if messageType == MessageTypes.REPLY:
             match = re.match(r'https://discord.com/api/webhooks/(\d+)/(.+)', webhook_url)
@@ -373,36 +402,8 @@ class EventListeners(commands.Cog):
         
         return embed
     
-    def handle_reply(self, documents, current_channel):
+    def find_channel_in_document(self, documents, current_channel):
         for doc in documents:
             if doc['channel'] == current_channel:
-                    log.info(doc)
                     return doc
         return None
-    
-    async def process_edit_message(self, message: discord.Message, webhook : Webhook, message_id, messageType):
-        try:
-            content = "*[message deleted by source]*"
-            attachments = []
-            embeds = []
-            
-            if messageType == MessageTypes.UPDATE:
-                current_message = await webhook.fetch_message(message_id)
-                content = current_message.content
-                attachments = current_message.attachments
-                embeds = current_message.embeds
-
-                if message.content != current_message.content:
-                    content = message.content
-                if message.attachments != current_message.attachments:
-                    attachments = message.attachments
-
-            await webhook.edit_message(
-                message_id,
-                content=content,
-                attachments=attachments,
-                embeds=embeds
-            )
-
-        except Exception as e:
-            log.warning(f"Failed to edit message {message.id}: {e}")

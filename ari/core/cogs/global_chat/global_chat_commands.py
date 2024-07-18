@@ -189,7 +189,6 @@ class Global(commands.Cog):
 
         await message.add_reaction('✅')
 
-        # TODO: Update this soon
         await self.on_join_announce(ctx, lobby_id)
        
     async def validateLobby(self, selected_lobby):

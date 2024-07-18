@@ -26,12 +26,9 @@ class CacheManager:
 
     def delete_cache_message(self, messageData):
         for message in self.cacheMessages:
-            if message["lobby_id"] == messageData['lobby_id']:
+            if message["lobby_id"] == messageData[0]['lobby_id']:
                 for source in message["messages"]:
-                    # all of this contains a [] : List
-                    # 0: []
-                    # 1: []
-                    if source[0]["message_id"] == messageData['message_id']:
+                    if source[0]["message_id"] == messageData[0]['message_id']:
                         message["messages"].remove(source)
                         return 
                     

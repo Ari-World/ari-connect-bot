@@ -89,17 +89,6 @@ class Intialization:
         return None  
     
     
-    # Currently used for reply 
-    async def find_messageID(self, target_channel_id,combined_ids):
-        channel = self.bot.get_channel(target_channel_id)
-
-        fetch_tasks = [self.try_fetch_message(target_channel_id, data, channel) for data in combined_ids]
-       
-        fetched_messages = await asyncio.gather(*fetch_tasks)
-        
-        replied_message = next((msg for msg in fetched_messages if msg is not None), None)
-        return replied_message
-    
     
     async def try_fetch_message(self, target_channel_id, data, channel):
         try:
