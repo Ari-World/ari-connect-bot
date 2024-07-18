@@ -20,13 +20,25 @@ from .core_commands import MyHelpCommand
 
 from core._cli import ExitCodes
 from ._driver._mongo import StaticDatabase
+from .data_mananger import *
+
 log = logging.getLogger("ari")
 
 class _NoOwnerSet(RuntimeError):
     """Raised when there is no owner set for the instance that is trying to start."""
 
-class Ari(commands.Bot):
-    
+# override the default process_command method to remove bot check
+class BotBase(commands.Bot):
+    async def process_commands(self, message) -> None:
+        fenderbotUserId = getFenderbotUserId()
+        if message.author.bot and fenderbotUserId and message.author.id != int(fenderbotUserId):
+            return
+        
+        ctx = await self.get_context(message)
+        # the type of the invocation context's bot attribute will be correct
+        await self.invoke(ctx)  # type: ignore
+
+class Ari(BotBase):
     def __init__(self, *args, **kwargs):
         self._shutdown_mode = ExitCodes.CRITICAL
         super().__init__(command_prefix= kwargs["prefix"], intents=Intents.all())

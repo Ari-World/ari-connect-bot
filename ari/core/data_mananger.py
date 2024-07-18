@@ -38,6 +38,8 @@ def load_basic_configuration():
 
     general_lobby_name = os.getenv('GENERAL_LOBBY_NAME')
 
+    fenderbot_user_id = os.getenv('FENDERBOT_USER_ID')
+
     if discord_api_token is None or discord_api_token == '':
         log.error("Environment variable 'DISCORD_API_TOKEN' is required!")
     
@@ -53,7 +55,8 @@ def load_basic_configuration():
         'LOG_MOD_ID' : log_mod_id,
         'LOG_PLAYER_REPORT_ID' : log_player_report_id,
         'CACHE_THRESHOLD': caching_threshold,
-        'GENERAL_LOBBY_NAME' : general_lobby_name
+        'GENERAL_LOBBY_NAME' : general_lobby_name,
+        'FENDERBOT_USER_ID' : fenderbot_user_id
     }
 
     log.info(basic_config)
@@ -144,3 +147,9 @@ def getGeneralLobby():
         return basic_config['GENERAL_LOBBY_NAME']
     except KeyError as e:
         raise RuntimeError("Bot basic config has not been loaded yet") from e
+    
+def getFenderbotUserId():
+    try:
+        return basic_config['FENDERBOT_USER_ID']
+    except KeyError as e:
+        return None
