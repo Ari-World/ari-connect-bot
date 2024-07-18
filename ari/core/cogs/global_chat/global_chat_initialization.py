@@ -48,7 +48,7 @@ class Intialization:
         
         self.lobby_data: List = await lobby_repository.findAll()
         self.connection: List = await guild_repository.findAll()
-
+        log.info(self.connection)
         # self.muted_users = await muted_repository.findAll()
 
         # self.malicious_urls = await malicious_urls_repository.findAll()
@@ -88,17 +88,6 @@ class Intialization:
                         return guild  
         return None  
     
-    
-    # Currently used for reply 
-    async def find_messageID(self, target_channel_id,combined_ids):
-        channel = self.bot.get_channel(target_channel_id)
-
-        fetch_tasks = [self.try_fetch_message(target_channel_id, data, channel) for data in combined_ids]
-       
-        fetched_messages = await asyncio.gather(*fetch_tasks)
-        
-        replied_message = next((msg for msg in fetched_messages if msg is not None), None)
-        return replied_message
     
     
     async def try_fetch_message(self, target_channel_id, data, channel):

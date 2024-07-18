@@ -347,7 +347,7 @@ class GuildConnectionRepository():
         return res
     
     async def delete(self,data):
-        await self.collection.delete_one({"lobby_id": data["lobby_id"]})  # Delete the guild document
+        await self.collection.delete_one({"lobby_id": data["lobby_id"],"channel_id": data['channel_id']})  # Delete the guild document
         
          
         

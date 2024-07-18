@@ -40,12 +40,9 @@ class GlobalChat(commands.Cog):
             # self.repos.malicious_words_repository, 
             # self.repos.moderator_repository
         
-        # log.info("Preparing messages for each lobbies")
-        # self.cache_manager.createCache(self.init.server_lobbies)
-
         log.info("Open world is ready")
 
     async def pre_load_cog(self):
         await self.bot.add_cog(Global(self.bot, self.init, self.repos))
         await self.bot.add_cog(Moderation(self.bot, self.repos, self.init,self.cache_manager))
-        # await self.bot.add_cog(EventListeners(self.bot, self.init, self.cache_manager))
+        await self.bot.add_cog(EventListeners(self.bot, self.init, self.cache_manager))
