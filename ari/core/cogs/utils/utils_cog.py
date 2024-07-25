@@ -64,11 +64,15 @@ class Utils(commands.Cog):
         help_command.context = ctx
         if command:
             cmd = self.bot.get_command(command)
-            embed = await help_command.send_command_help(cmd)
+            embed = await help_command.send_command_help(cmd)    
             await ctx.interaction.response.send_message(embed=embed)
         else:
             embed = await help_command.command_callback(ctx)
-            await ctx.send(embed=embed)
+
+            view = discord.ui.View()
+            view.add_item(discord.ui.Button(label="Invite", style=discord.ButtonStyle.link, url=self.bot.inv_url))
+        
+            await ctx.send(embed=embed, view=view)
 
 class MyHelpCommand(commands.HelpCommand):
     def __init__(self):
@@ -85,7 +89,10 @@ class MyHelpCommand(commands.HelpCommand):
             'Config': '⚙️',
             'Info': '🗿'
         }
-
+        
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Invite", style=discord.ButtonStyle.link, url=self.context.bot.inv_url))
+        
         for cog, commands in mapping.items():
             if not cog :
                 continue
