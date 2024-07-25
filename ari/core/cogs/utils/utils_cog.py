@@ -41,18 +41,21 @@ class Utils(commands.Cog):
         await ctx.send(f'Pong! 🏓 Latency is {latency_ms}ms')
 
     async def command_autocompletion(
-        self, 
-        interaction: discord.Interaction, 
-        current: str
-    ) -> List[app_commands.Choice[str]]:
-        # List command groups (cogs) for auto-completion
-        command_groups = [
-            app_commands.Choice(name=cog.qualified_name, value=cog.qualified_name)
-            for cog in self.bot.cogs.values()
-            if current.lower() in cog.qualified_name.lower()
-        ]
-        # Limit the number of choices to 25 or fewer
-        return command_groups[:25]
+            self,
+            interaction: discord.Interaction,
+            current: str
+        ) -> List[app_commands.Choice[str]]:
+            excluded_commands = ["help"]
+
+            # List top-level commands for auto-completion, excluding specific commands
+            top_level_commands = [
+                app_commands.Choice(name=cmd.name, value=cmd.name)
+                for cmd in self.bot.tree.walk_commands()
+                if not cmd.parent and current.lower() in cmd.name.lower() and cmd.name not in excluded_commands
+            ]
+
+            # Combine and limit the number of choices to 25 or fewer
+            return top_level_commands[:25]
 
     @commands.hybrid_command(name='help', with_app_command=True , description='Shows help information')
     @app_commands.autocomplete(command=command_autocompletion)
@@ -101,18 +104,22 @@ class MyHelpCommand(commands.HelpCommand):
                         value+=f"\u1CBC\u1CBC **/{command.name}:** {command.description}\n"
                 embed.add_field(name=f"{emoji} {name}:", value=value, inline=False)
         return embed
-
-    async def send_cog_help(self, cog):
-        ctx = self.context
-        embed = discord.Embed(title=f"{cog.qualified_name} Commands", color=Color.PRIMARY.to_discord_color())
-        filtered_cmds = await self.filter_commands(cog.get_commands(), sort=True)
-        for command in filtered_cmds:
-            embed.add_field(name=command.name, value=command.help or "No description", inline=False)
-        channel = self.get_destination()
-        await channel.send(embed=embed)
+    
+    # This shows cogs
+    # async def send_cog_help(self, cog):
+    #     ctx = self.context
+    #     embed = discord.Embed(title=f"{cog.qualified_name} Commands", color=Color.PRIMARY.to_discord_color())
+    #     filtered_cmds = await self.filter_commands(cog.get_commands(), sort=True)
+    #     for command in filtered_cmds:
+    #         embed.add_field(name=command.name, value=command.help or "No description", inline=False)
+    #     channel = self.get_destination()
+    #     await channel.send(embed=embed)
 
     async def send_command_help(self, command):
-        embed = discord.Embed(title=command.qualified_name, color=Color.PRIMARY.to_discord_color())
+        ctx = self.context
+        embed = discord.Embed(color=Color.PRIMARY.to_discord_color())
+        embed.set_author(name=f"AriConnect - {command.qualified_name}", icon_url=ctx.bot.user.avatar.url, url=self.context.bot.inv_url or "https://discord.com/") 
+
         if command.help:
             embed.description = command.help
 
