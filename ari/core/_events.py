@@ -68,6 +68,7 @@ def init_events(bot):
             activity=activity
         )
         log.info("Ari Toram is Online")
+
     async def _on_ready():
         if bot._uptime is not None:
             return
@@ -116,7 +117,7 @@ def init_events(bot):
         if invite_url:
             rich_console.print(f"\nInvite URL: {Text(invite_url, style=f'link {invite_url}')}")
             # We generally shouldn't care if the client supports it or not as Rich deals with it.
-
+        bot.inv_url = invite_url
     @bot.event
     async def on_command_error(ctx, error):
         if isinstance(error, commands.CommandOnCooldown):

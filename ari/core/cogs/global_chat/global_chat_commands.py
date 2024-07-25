@@ -11,21 +11,20 @@ from .global_chat_ui_views import CreateLobbyModal, LobbyPagination
 from .global_chat_initialization import Intialization
 log = logging.getLogger("globalchat.commands")
 
-class Global(commands.Cog):
+class Chat(commands.Cog):
     def __init__(self, bot : commands.Bot, initialization : Intialization, repositories):
         self.bot = bot
         self.init = initialization
         self.repos = repositories
 
     # Conditions: Perms to kick user
-    @commands.hybrid_command(name='createlobby',with_app_command=True, description='1 lobby per server, Users need to have kick permissions to use this command')
+    @commands.hybrid_command(name='createlobby',with_app_command=True, description='Create a global chat lobby, 1 per server')
     @commands.has_permissions(kick_members=True)
     async def createLobby(self, ctx:commands.Context):
         
         guild_id = ctx.guild.id
         canCreate = False
         
-        log.info(self.init.lobby_data)
         for id in self.init.lobby_data:
             if guild_id == id["guild_id"]:
                 canCreate = True
