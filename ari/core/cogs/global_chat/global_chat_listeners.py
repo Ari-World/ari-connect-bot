@@ -41,11 +41,15 @@ class EventListeners(commands.Cog):
         guild_id = message.guild.id
         channel_id = message.channel.id
         
-        guild_document = self.init.find_guild(guild_id, channel_id)
-        if not guild_document:
+        connection = None
+        for con in self.init.connection:
+            if con['guild_id'] == guild_id and con['channel_id'] == channel_id:
+                connection = con
+
+        if not connection:
             return
         
-        await self.validate_webhook_channel(message, guild_document, channel_id, MessageTypes.DELETE)
+        await self.send_to_matching_lobbies(message, connection, MessageTypes.DELETE)
 
     # Edit
     @commands.Cog.listener()
