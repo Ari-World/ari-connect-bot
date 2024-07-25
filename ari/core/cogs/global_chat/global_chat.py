@@ -47,8 +47,10 @@ class GlobalChatManager(commands.Cog):
 
         # Global chat commands
         await self.bot.add_cog(Chat(self.bot, self.init, self.repos))
+        
         # Lobby moderation commands
         # await self.bot.add_cog(Moderation(self.bot, self.repos, self.init,self.cache_manager))
+
         # Global chat setting
         await self.bot.add_cog(Config(self.bot, self.init))
         

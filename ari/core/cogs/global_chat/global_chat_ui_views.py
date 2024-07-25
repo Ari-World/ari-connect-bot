@@ -210,7 +210,7 @@ class LobbyPagination(discord.ui.View):
         await self.update_message(self.get_current_page_data())
         
 class LobbyDropDown(discord.ui.Select):
-    def __init__(self,server_lobbies,author, on_item_added):
+    def __init__(self,server_lobbies, author, on_item_added):
         self.server_lobbies = server_lobbies
         self.author = author
         self.on_item_added = on_item_added
