@@ -91,8 +91,7 @@ class CreateLobbyModal(discord.ui.Modal):
         embed.add_field(name="Description", value=self.description.value, inline=False)
         embed.set_footer(text=f"For futher configuration do /config <lobbycode>",icon_url=interaction.user.avatar.url)
         
-        await interaction.response.send_message(embed=embed)
-
+        await interaction.response.send_message(embed=embed)\
 
 class LobbyPagination(discord.ui.View):
     def __init__(self, data, current_page: int = 1, sep: int = 5, timeout=None):
@@ -209,32 +208,45 @@ class LobbyPagination(discord.ui.View):
         self.current_page = int(len(self.data) / self.sep) + 1
         await self.update_message(self.get_current_page_data())
         
-class LobbyDropDown(discord.ui.Select):
-    def __init__(self,server_lobbies, author, on_item_added):
-        self.server_lobbies = server_lobbies
+class DropDown(discord.ui.Select):
+    def __init__(
+            self, 
+            items: List, 
+            author, 
+            placeholder: str, 
+            on_item_added
+    )-> None:
+        self.items = items
         self.author = author
         self.on_item_added = on_item_added
         
-        options = [discord.SelectOption(label=lobby["lobbyname"], value=lobby["lobbyname"]) for lobby in self.server_lobbies]
+        options = [discord.SelectOption(label=item["title"], value=item["value"], emoji=item['emoji']) for item in self.items]
         super().__init__(
-            placeholder="Select a lobby",
+            placeholder=placeholder,
             options=options,
             min_values=1,
             max_values=1
         )
     async def callback(self, interaction):
         if interaction.user == self.author:
+            # This stops the interaction failed error
             await interaction.response.defer()
+            
             await self.on_item_added(interaction.data['values'][0])
                  
-class ConnectDropDown(discord.ui.View):
-    def __init__(self, author, server_lobbies):
+class DynamicDropDown(discord.ui.View):
+    def __init__(
+            self, 
+            author, 
+            items:List, 
+            placeholder: str
+    ) -> None:
         super().__init__()
-        self.lobby = None
-        self.add_item(LobbyDropDown(server_lobbies,author, self.on_item_added))
+        self.value = None
+        self.add_item(DropDown(items, author, placeholder, self.on_item_added))
 
     async def on_item_added(self,value):
-        self.lobby = value
+        self.value = value
         self.stop()
 
 class DynamicChoice(discord.ui.View):
@@ -249,7 +261,7 @@ class DynamicChoice(discord.ui.View):
     
     def create_button(self, label):
         # Create a button with the given label
-        button = discord.ui.Button(label=label, style=discord.ButtonStyle.primary)
+        button = discord.ui.Button(label=label, style=discord.ButtonStyle.grey)
         button.callback = self.button_callback
         return button
 
