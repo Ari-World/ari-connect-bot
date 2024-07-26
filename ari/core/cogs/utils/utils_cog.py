@@ -104,11 +104,11 @@ class MyHelpCommand(commands.HelpCommand):
                 for command in filtered_cmds:
                     # Brute force for hyperlinks descriptions
                     if command.name == "invite":
-                        value+=f"\u1CBC\u1CBC **/{command.name}:** [Join](https://discord.gg/w8XKwkZQza) our support server\n"                    
+                        value+=f"<:_blank:1266299283737677844>**/{command.name}:** [Join](https://discord.gg/w8XKwkZQza) our support server\n"                    
                     elif command.name == "support":
-                        value+=f"\u1CBC\u1CBC **/{command.name}:** [Invite](https://discord.com/) Ari to your server\n"
+                        value+=f"<:_blank:1266299283737677844>**/{command.name}:** [Invite](https://discord.com/) Ari to your server\n"
                     else:
-                        value+=f"\u1CBC\u1CBC **/{command.name}:** {command.description}\n"
+                        value+=f"<:_blank:1266299283737677844>**/{command.name}:** {command.description}\n"
                 embed.add_field(name=f"{emoji} {name}:", value=value, inline=False)
         return embed
     
