@@ -39,6 +39,9 @@ class Config(commands.Cog):
             "inline": True
             }
         ]
+        # settings 
+        self.sent_message = None
+
     async def settings_autocompletion(
             self,
             interaction: discord.Interaction,
@@ -53,8 +56,6 @@ class Config(commands.Cog):
 
             # Combine and limit the number of choices to 25 or fewer
             return settings_choices
-
-      
     
     # We'll be having a config file for this for each lobby
     @commands.hybrid_command(name="settings", with_app_command=True ,description="Shows and configure lobby settings")
@@ -65,39 +66,48 @@ class Config(commands.Cog):
         settings: str = None
         ):
         # Need validation if he's an owner and will pick a which lobby is this
-       
-        msg = None
-
-        if not settings:
-            tup = await self.settings_menu(ctx)
-            settings: str = tup[1]
-            msg: discord.Message = tup[0]
+        if self.sent_message is not None:
+            await self.settings_menu(ctx, True)
             
-        await self.setting_manager(settings, ctx, msg)
+        log.info(self.sent_message)
+        if not settings:
+            settings = await self.settings_menu(ctx)
+            
+        await self.setting_manager(settings, ctx)
+
+        log.info(self.sent_message)
+        self.sent_message = None
 
     async def setting_manager(
             self, 
             choice, 
             ctx : commands.Context, 
-            msg: discord.Message = None
         ):
+        flag = choice
 
-        if str(choice) == "lobbydetails":
-            await self.lobby_details(ctx, msg)
-        elif str(choice) == "moderation":
-            await self.moderation(ctx, msg)
-        elif str(choice) == "logging":
-            await self.lobby_logging(ctx, msg)
-        else:
-            embed = self.create_embed(
-                "Not Found", 
-                "Settings not found"
-                )     
-            await ctx.interaction.response.defer()
-            await ctx.send(embed=embed)
-            return
-    
-    async def settings_menu(self, ctx:commands.Context):
+        while True:
+            if str(choice) == "lobbydetails":
+                flag = await self.lobby_details(ctx)
+            elif str(choice) == "moderation":
+                flag = await self.moderation(ctx)
+            elif str(choice) == "logging":
+                flag = await self.lobby_logging(ctx)
+            else:
+                embed = self.create_embed(
+                    "Not Found", 
+                    "Settings not found"
+                    )     
+                await ctx.interaction.response.defer()
+                await ctx.send(embed=embed)
+                return
+            
+            if str(flag) == "Back":
+                flag = await self.settings_menu(ctx)
+
+            if flag is None:
+                break
+        
+    async def settings_menu(self, ctx:commands.Context, delete: bool = False):
         embed = self.create_embed(
             "Settings", 
             "Shows and configure lobby settings",
@@ -108,15 +118,22 @@ class Config(commands.Cog):
             self.fields,
             "⚙️ Setting"
             )
-        msg = await ctx.send(embed=embed, view=views)
+        if not delete:
+            if self.sent_message is not None:
+                await self.sent_message.edit(embed=embed, view=views)
+            else:
+                self.sent_message = await ctx.send(embed=embed, view=views)
+        else:
+            await self.sent_message.edit(embed=embed)
+            self.sent_message = None
 
         try:
             await asyncio.wait_for(views.wait(), timeout=180)
         except asyncio.TimeoutError:
-            await msg.edit(embed=embed,view=None)
+            await self.sent_message.edit(embed=embed,view=None)
             return None
 
-        return (msg, views.value)  
+        return views.value  
     
     def create_embed(self, title, description=None ,fields=None):
         embed = discord.Embed(color=Color.PRIMARY.to_discord_color(),description= description)
@@ -128,7 +145,7 @@ class Config(commands.Cog):
 
         return embed        
     
-    async def lobby_details(self, ctx:commands.Context, msg:discord.Message = None):
+    async def lobby_details(self, ctx:commands.Context):
         fields = [
             {
             "title": "Title",
@@ -161,18 +178,18 @@ class Config(commands.Cog):
             ctx.message.author,
             ['Back', 'Choice1','Choice2']
         )
-        if msg is not None:
-            await msg.edit(embed=embed, view=views)
+        if self.sent_message is not None:
+            await self.sent_message.edit(embed=embed, view=views)
         else:
-            msg = await ctx.send(embed=embed, view=views)
+            self.sent_message = await ctx.send(embed=embed, view=views)
 
         try:
             await asyncio.wait_for(views.wait(), timeout=180)
         except asyncio.TimeoutError:
-            await msg.edit(embed=embed, view=None)
+            await self.sent_message.edit(embed=embed, view=None)
             return None
         
-
+        return
 
     async def moderation(self, ctx:commands.Context, msg:discord.Message = None):
         fields = [
@@ -193,16 +210,18 @@ class Config(commands.Cog):
             ctx.message.author,
             ['Back', 'Choice1','Choice2']
         )
-        if msg is not None:
-            await msg.edit(embed=embed, view=views)
+        if self.sent_message is not None:
+            await self.sent_message.edit(embed=embed, view=views)
         else:
-            msg = await ctx.send(embed=embed, view=views)
+            self.sent_message = await ctx.send(embed=embed, view=views)
 
         try:
             await asyncio.wait_for(views.wait(), timeout=180)
         except asyncio.TimeoutError:
-            await msg.edit(embed=embed, view=None)
+            await self.sent_message.edit(embed=embed, view=None)
             return None
+        
+        return
 
     async def lobby_logging(self, ctx:commands.Context, msg:discord.Message = None):
         fields = [
@@ -237,15 +256,17 @@ class Config(commands.Cog):
             ctx.message.author,
             ['Back', 'Choice1','Choice2']
         )
-        if msg is not None:
-            await msg.edit(embed=embed, view=views)
+        if self.sent_message is not None:
+            await self.sent_message.edit(embed=embed, view=views)
         else:
-            msg = await ctx.send(embed=embed, view=views)
+            self.sent_message = await ctx.send(embed=embed, view=views)
 
         try:
             await asyncio.wait_for(views.wait(), timeout=180)
         except asyncio.TimeoutError:
-            await msg.edit(embed=embed, view=None)
+            await self.sent_message.edit(embed=embed, view=None)
             return None
+        
+        return
 
         
