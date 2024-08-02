@@ -40,7 +40,7 @@ class Config(commands.Cog):
             }
         ]
         # settings 
-        self.sent_message = None
+        self.sent_message : discord.Message = None
 
     async def settings_autocompletion(
             self,
@@ -63,20 +63,16 @@ class Config(commands.Cog):
     async def settings(
         self, 
         ctx:commands.Context, 
-        settings: str = None
+        settings: str = None,
         ):
         # Need validation if he's an owner and will pick a which lobby is this
         if self.sent_message is not None:
             await self.settings_menu(ctx, True)
             
-        log.info(self.sent_message)
         if not settings:
             settings = await self.settings_menu(ctx)
             
         await self.setting_manager(settings, ctx)
-
-        log.info(self.sent_message)
-        self.sent_message = None
 
     async def setting_manager(
             self, 
@@ -86,11 +82,11 @@ class Config(commands.Cog):
         flag = choice
 
         while True:
-            if str(choice) == "lobbydetails":
+            if str(flag) == "lobbydetails":
                 flag = await self.lobby_details(ctx)
-            elif str(choice) == "moderation":
+            elif str(flag) == "moderation":
                 flag = await self.moderation(ctx)
-            elif str(choice) == "logging":
+            elif str(flag) == "logging":
                 flag = await self.lobby_logging(ctx)
             else:
                 embed = self.create_embed(
@@ -101,13 +97,14 @@ class Config(commands.Cog):
                 await ctx.send(embed=embed)
                 return
             
-            if str(flag) == "Back":
-                flag = await self.settings_menu(ctx)
-
             if flag is None:
+                await self.settings_menu(ctx, True)
                 break
-        
-    async def settings_menu(self, ctx:commands.Context, delete: bool = False):
+
+            if str(flag) == "Back" or flag:
+                flag = await self.settings_menu(ctx)
+          
+    async def settings_menu(self, ctx:commands.Context, delete: bool = False) -> (str | None):
         embed = self.create_embed(
             "Settings", 
             "Shows and configure lobby settings",
@@ -123,19 +120,22 @@ class Config(commands.Cog):
                 await self.sent_message.edit(embed=embed, view=views)
             else:
                 self.sent_message = await ctx.send(embed=embed, view=views)
+
+            try:
+                await asyncio.wait_for(views.wait(), timeout=180)
+            except asyncio.TimeoutError:
+                await self.sent_message.edit(embed=embed,view=None)
+                self.sent_message=None
+                return None
+
+            return views.value  
+
         else:
-            await self.sent_message.edit(embed=embed)
+            await self.sent_message.edit(embed=embed, view=None)
             self.sent_message = None
-
-        try:
-            await asyncio.wait_for(views.wait(), timeout=180)
-        except asyncio.TimeoutError:
-            await self.sent_message.edit(embed=embed,view=None)
             return None
-
-        return views.value  
     
-    def create_embed(self, title, description=None ,fields=None):
+    def create_embed(self, title, description=None ,fields=None) -> discord.Embed:
         embed = discord.Embed(color=Color.PRIMARY.to_discord_color(),description= description)
         embed.set_author(name=f"Ari connect - {title}", icon_url=self.bot.user.avatar.url)
         
@@ -145,7 +145,7 @@ class Config(commands.Cog):
 
         return embed        
     
-    async def lobby_details(self, ctx:commands.Context):
+    async def lobby_details(self, ctx:commands.Context) -> (str | None):
         fields = [
             {
             "title": "Title",
@@ -172,24 +172,113 @@ class Config(commands.Cog):
         embed = self.create_embed(
             title = "Lobby Details",
             fields = fields
-            )       
+            ) 
+        button_interaction_data = [
+            {
+            'title':'Back',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            }, 
+            {
+            'title':'Title',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            },
+            {
+            'title':'Description',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            },
+            {
+            'title':'Topics',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            }
+        ]
+             
         # TODO: Can keep interacting after I press back button
         views = DynamicChoice(
             ctx.message.author,
-            ['Back', 'Choice1','Choice2']
+            button_interaction_data
         )
+                    
+
         if self.sent_message is not None:
             await self.sent_message.edit(embed=embed, view=views)
         else:
             self.sent_message = await ctx.send(embed=embed, view=views)
+        # TODO: Refactor this
+        while True:
+            try:
+                await views.wait()
+                value = views.value
+                
+                match value:
+                    case 'Back':
+                        # Delete all 
+                        for button_data in button_interaction_data:
+                            if button_data['status'] is True:
+                                await button_data['sent_message'].delete()
+                        return 'Back'
+                    case 'Title':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[1]['status'] is not True:
+                            button_interaction_data[1]['color'] = discord.ButtonStyle.primary
+                            # ==============================================================================================
+                            # Some setting logic will happen here before sending
 
-        try:
-            await asyncio.wait_for(views.wait(), timeout=180)
-        except asyncio.TimeoutError:
-            await self.sent_message.edit(embed=embed, view=None)
-            return None
-        
-        return
+
+                            # ==============================================================================================
+                            button_interaction_data[1]['sent_message'] = await ctx.send('Rendering Input button for Title')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[1]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[1]['sent_message'].delete()
+                            
+                            button_interaction_data[1]['sent_message'] = None
+
+                        button_interaction_data[1]['status'] = not button_interaction_data[1]['status']
+
+                    case 'Description':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[2]['status'] is not True:
+                            button_interaction_data[2]['color'] = discord.ButtonStyle.primary
+                            button_interaction_data[2]['sent_message'] = await ctx.send('Rendering Input button for Description')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[2]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[2]['sent_message'].delete()
+                            
+                            button_interaction_data[2]['sent_message'] = None
+
+                        button_interaction_data[2]['status'] = not button_interaction_data[2]['status']
+                    case 'Topics':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[3]['status'] is not True:
+                            button_interaction_data[3]['color'] = discord.ButtonStyle.primary
+                            button_interaction_data[3]['sent_message'] = await ctx.send('Rendering Input button for Topics')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[3]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[3]['sent_message'].delete()
+                            
+                            button_interaction_data[3]['sent_message'] = None
+
+                        button_interaction_data[3]['status'] = not button_interaction_data[3]['status']
+                    case _:
+                        return None
+
+
+                # Recreate view and reset wait
+                views = DynamicChoice(ctx.message.author, button_interaction_data)
+                await self.sent_message.edit(view=views)
+
+            except asyncio.TimeoutError:
+                return None
 
     async def moderation(self, ctx:commands.Context, msg:discord.Message = None):
         fields = [
@@ -205,23 +294,73 @@ class Config(commands.Cog):
             title = "Moderation",
             fields = fields
             )       
+        button_interaction_data = [
+            {
+            'title':'Back',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            }, 
+            {
+            'title':'Moderators',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            }
+        ]
+             
         # TODO: Can keep interacting after I press back button
         views = DynamicChoice(
             ctx.message.author,
-            ['Back', 'Choice1','Choice2']
+            button_interaction_data
         )
+                    
+
         if self.sent_message is not None:
             await self.sent_message.edit(embed=embed, view=views)
         else:
             self.sent_message = await ctx.send(embed=embed, view=views)
+        # TODO: Refactor this
+        while True:
+            try:
+                await views.wait()
+                value = views.value
+                
+                match value:
+                    case 'Back':
+                        # Delete all 
+                        for button_data in button_interaction_data:
+                            if button_data['status'] is True:
+                                await button_data['sent_message'].delete()
+                        return 'Back'
+                    case 'Moderators':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[1]['status'] is not True:
+                            button_interaction_data[1]['color'] = discord.ButtonStyle.primary
+                            # ==============================================================================================
+                            # Some setting logic will happen here before sending
 
-        try:
-            await asyncio.wait_for(views.wait(), timeout=180)
-        except asyncio.TimeoutError:
-            await self.sent_message.edit(embed=embed, view=None)
-            return None
-        
-        return
+
+                            # ==============================================================================================
+                            button_interaction_data[1]['sent_message'] = await ctx.send('Rendering Input button for Moderators')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[1]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[1]['sent_message'].delete()
+                            
+                            button_interaction_data[1]['sent_message'] = None
+
+                        button_interaction_data[1]['status'] = not button_interaction_data[1]['status']
+                    case _:
+                        return None
+
+
+                # Recreate view and reset wait
+                views = DynamicChoice(ctx.message.author, button_interaction_data)
+                await self.sent_message.edit(view=views)
+
+            except asyncio.TimeoutError:
+                return None
 
     async def lobby_logging(self, ctx:commands.Context, msg:discord.Message = None):
         fields = [
@@ -250,23 +389,111 @@ class Config(commands.Cog):
         embed = self.create_embed(
             title = "Logging",
             fields = fields
-            )       
+        ) 
+        button_interaction_data = [
+            {
+            'title':'Back',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            }, 
+            {
+            'title':'Chat Logs',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            },
+            {
+            'title':'Moderation Logs',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            },
+            {
+            'title':'Report Logs',
+            'color': discord.ButtonStyle.grey,
+            'status': False,
+            'sent_message': None
+            }
+        ]
+             
         # TODO: Can keep interacting after I press back button
         views = DynamicChoice(
             ctx.message.author,
-            ['Back', 'Choice1','Choice2']
+            button_interaction_data
         )
+                    
+
         if self.sent_message is not None:
             await self.sent_message.edit(embed=embed, view=views)
         else:
             self.sent_message = await ctx.send(embed=embed, view=views)
+        # TODO: Refactor this
+        while True:
+            try:
+                await views.wait()
+                value = views.value
+                
+                match value:
+                    case 'Back':
+                        # Delete all 
+                        for button_data in button_interaction_data:
+                            if button_data['status'] is True:
+                                await button_data['sent_message'].delete()
+                        return 'Back'
+                    case 'Chat Logs':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[1]['status'] is not True:
+                            button_interaction_data[1]['color'] = discord.ButtonStyle.primary
+                            # ==============================================================================================
+                            # Some setting logic will happen here before sending
 
-        try:
-            await asyncio.wait_for(views.wait(), timeout=180)
-        except asyncio.TimeoutError:
-            await self.sent_message.edit(embed=embed, view=None)
-            return None
-        
-        return
 
+                            # ==============================================================================================
+                            button_interaction_data[1]['sent_message'] = await ctx.send('Rendering Input button for Chat Logs')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[1]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[1]['sent_message'].delete()
+                            
+                            button_interaction_data[1]['sent_message'] = None
+
+                        button_interaction_data[1]['status'] = not button_interaction_data[1]['status']
+
+                    case 'Moderation Logs':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[2]['status'] is not True:
+                            button_interaction_data[2]['color'] = discord.ButtonStyle.primary
+                            button_interaction_data[2]['sent_message'] = await ctx.send('Rendering Input button for Moderation Logs')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[2]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[2]['sent_message'].delete()
+                            
+                            button_interaction_data[2]['sent_message'] = None
+
+                        button_interaction_data[2]['status'] = not button_interaction_data[2]['status']
+                    case 'Report Logs':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[3]['status'] is not True:
+                            button_interaction_data[3]['color'] = discord.ButtonStyle.primary
+                            button_interaction_data[3]['sent_message'] = await ctx.send('Rendering Input button for Report Logs')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[3]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[3]['sent_message'].delete()
+                            
+                            button_interaction_data[3]['sent_message'] = None
+
+                        button_interaction_data[3]['status'] = not button_interaction_data[3]['status']
+                    case _:
+                        return None
+
+
+                # Recreate view and reset wait
+                views = DynamicChoice(ctx.message.author, button_interaction_data)
+                await self.sent_message.edit(view=views)
+
+            except asyncio.TimeoutError:
+                return None
         

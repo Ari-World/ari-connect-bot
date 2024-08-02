@@ -250,8 +250,9 @@ class DynamicDropDown(discord.ui.View):
         self.stop()
 
 class DynamicChoice(discord.ui.View):
-    def __init__(self, author, choices):
-        super().__init__()
+    def __init__(self, author, choices,timeout=60):
+        super().__init__()        
+        self.timeout = timeout
         self.author = author
         self.value = None
         
@@ -259,18 +260,28 @@ class DynamicChoice(discord.ui.View):
         for choice in choices:
             self.add_item(self.create_button(choice))
     
-    def create_button(self, label):
+    def create_button(self, choice):
         # Create a button with the given label
-        button = discord.ui.Button(label=label, style=discord.ButtonStyle.grey)
+        button = discord.ui.Button(label=choice['title'], style=choice['color'])
         button.callback = self.button_callback
         return button
 
+    # async def button_callback(self, interaction: discord.Interaction):
+    #     if interaction.user == self.author:
+    #         # Find the button that was clicked by matching custom_id
+    #         for x in interaction.message.components:
+    #             for button in x.children:
+    #                 if button.custom_id == interaction.data['custom_id']:
+    #                     self.value = button.label
+    #                     button.style = discord.ButtonStyle.primary
+            
     async def button_callback(self, interaction: discord.Interaction):
         if interaction.user == self.author:
             # Find the button that was clicked by matching custom_id
-            for x in interaction.message.components:
-                for button in x.children:
-                    if button.custom_id == interaction.data['custom_id']:
-                        self.value = button.label
+            for button in self.children:
+                if button.custom_id == interaction.data['custom_id']:
+                    self.value = button.label
+                    button.style = discord.ButtonStyle.primary
+                    break
             await interaction.response.defer()
             self.stop()
