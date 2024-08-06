@@ -44,22 +44,19 @@ class Intialization:
     async def load_data(
             self,
             lobby_repository,
-            guild_repository):
+            guild_repository,
+            lobby_config_repository):
         
         self.lobby_data: List = await lobby_repository.findAll()
         self.connection: List = await guild_repository.findAll()
-        # self.muted_users = await muted_repository.findAll()
+        self.lobby_config = await lobby_config_repository.findAll()
 
-        # self.malicious_urls = await malicious_urls_repository.findAll()
-
-        # self.malicious_words = await malicious_words_repository.findAll()
-
-        # self.moderator = await moderator_repository.findAll()
-
-
-        # All Functions that needs this data / a helper functions will be put here
-    # More Generalize functions that speicifcs such as validating users if its a mode
+    # Cache Repository Getter functions
+    # 
     
+    
+
+    # More Generalize functions that speicifcs such as validating users if its a mode
     def get_lobby_length(self, lobby_id):
         count = 0
         for lobby in self.connection:
@@ -86,7 +83,6 @@ class Intialization:
                     if channel["channel_id"] == channel_id:
                         return guild  
         return None  
-    
     
     
     async def try_fetch_message(self, target_channel_id, data, channel):

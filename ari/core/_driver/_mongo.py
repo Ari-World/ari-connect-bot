@@ -61,3 +61,7 @@ class StaticDatabase:
     @classmethod
     def moderator_collection(cls):
         return cls.get_db()["moderators"]
+    
+    @classmethod
+    def lobby_config_collection(cls):
+        return cls.get_db()["lobby_config"]

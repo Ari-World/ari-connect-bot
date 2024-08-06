@@ -11,7 +11,7 @@ from ...utils.utility import generate_uuid
 log = logging.getLogger("globalchat.view")
 
 
-
+# This is currently worked only only for creating lobby
 class CreateLobbyModal(discord.ui.Modal):
     def __init__(self, lobby_data : List):
         super().__init__(title='Create Lobby')  # Properly initialize the base class with the title
@@ -91,7 +91,7 @@ class CreateLobbyModal(discord.ui.Modal):
         embed.add_field(name="Description", value=self.description.value, inline=False)
         embed.set_footer(text=f"For futher configuration do /config <lobbycode>",icon_url=interaction.user.avatar.url)
         
-        await interaction.response.send_message(embed=embed)\
+        await interaction.response.send_message(embed=embed)
 
 class LobbyPagination(discord.ui.View):
     def __init__(self, data, current_page: int = 1, sep: int = 5, timeout=None):

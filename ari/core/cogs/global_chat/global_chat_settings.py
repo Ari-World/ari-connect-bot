@@ -6,14 +6,14 @@ from typing import List
 from discord import app_commands
 from discord.ext import commands
 
-from .global_chat_ui_views import DynamicChoice, DynamicDropDown
-
+from .global_chat_ui_views import DynamicChoice, DynamicDropDown, DynamicSubmit
+from .global_chat_initialization import Intialization
 from ...utils.utility import Color
 
 log = logging.getLogger('global.settings')
 
 class Config(commands.Cog):
-    def __init__(self, bot, init) -> None:
+    def __init__(self, bot: commands.Bot, init: Intialization) -> None:
         super().__init__()
         self.bot = bot
         self.init = init
@@ -63,8 +63,27 @@ class Config(commands.Cog):
     async def settings(
         self, 
         ctx:commands.Context, 
-        settings: str = None,
+        lobby_id: str = None,
         ):
+        owner = ctx.message.author.id
+        lobby_config = None
+        isOwner = False
+
+        # Validation
+        if lobby_id is None:
+            pass
+        
+        # Validate if he's the owner
+        for lobby_data in self.init.lobby_data:
+            if lobby_data['owner_id'] == owner:
+                isOwner = True
+
+        for config in self.init.lobby_config:
+            if config['lobby_id'] == lobby_id:
+                lobby_config = config
+                break        
+
+
         # Need validation if he's an owner and will pick a which lobby is this
         if self.sent_message is not None:
             await self.settings_menu(ctx, True)
@@ -230,10 +249,11 @@ class Config(commands.Cog):
                             button_interaction_data[1]['color'] = discord.ButtonStyle.primary
                             # ==============================================================================================
                             # Some setting logic will happen here before sending
-
+                            # Maybe the embed or something
+                            submit = DynamicSubmit( ctx.message.author)
 
                             # ==============================================================================================
-                            button_interaction_data[1]['sent_message'] = await ctx.send('Rendering Input button for Title')
+                            button_interaction_data[1]['sent_message'] = await ctx.send('Submit button here', view=submit)
                         # Then if handles if message was sent so we delete it and change the color to gray
                         else:
                             button_interaction_data[1]['color'] = discord.ButtonStyle.grey
