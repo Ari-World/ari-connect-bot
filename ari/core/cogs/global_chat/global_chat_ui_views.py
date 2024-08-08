@@ -13,9 +13,11 @@ log = logging.getLogger("globalchat.view")
 
 # This is currently worked only only for creating lobby
 class CreateLobbyModal(discord.ui.Modal):
-    def __init__(self, lobby_data : List):
+    def __init__(self, lobby_data : List, connections: List, configs: List):
         super().__init__(title='Create Lobby')  # Properly initialize the base class with the title
         self.lobby_data  = lobby_data
+        self.connections = connections
+        self.config = configs
         self.data = {
             "title": "",
             "description": "",
@@ -49,9 +51,6 @@ class CreateLobbyModal(discord.ui.Modal):
         channel = interaction.channel
 
         # Generate lobby data
-        self.data["title"] = self.name.value
-        self.data["description"] = self.description.value
-        self.data["topics"] = self.topics.value.split(" ")
         self.data["limit"] = 20
         self.data["guild_id"] = interaction.guild.id
         self.data["guild_name"] = interaction.guild.name
@@ -64,9 +63,43 @@ class CreateLobbyModal(discord.ui.Modal):
         # Add the id
         self.lobby_data.append(self.data)
 
+        # Create configuration
+        config = {
+            "lobby_id" : lobby_code,
+            "lobby_config": {
+                "title": self.name.value,
+                "description": self.description.value,
+                "topics": self.topics.value.split(" ")
+            },
+            "moderation_config": {
+                "moderators": [],
+                "banned_words": [],
+                "banned_links": [],
+                "banned_users": [],
+                "banned_server": [],
+            },
+            "log_config": {
+                "chat_log":{
+                    "guild_id": None,
+                    "channel_id": None,
+                },
+                "moderation_log": {
+                    "guild_id": None,
+                    "channel_id": None,
+                },
+                "report_logs":{
+                    "guild_id": None,
+                    "channel_id": None,
+                }
+            }
+        }
+        conf = await db.lobby_config_repository.create(config)
+        config["_id"] = conf.inserted_id
+        self.config.append(config)
+
         # Creating connection data
         webhook = await channel.create_webhook(name=self.name.value)
-        self.connection = {
+        connection = {
             "lobby_id": lobby_code,
             "channel_id": channel.id,
             "webhook": webhook.url,
@@ -74,7 +107,10 @@ class CreateLobbyModal(discord.ui.Modal):
             "guild_name": interaction.guild.name
         }
         
-        await db.guild_repository.create(self.connection)
+        con = await db.guild_repository.create(connection)
+        connection["_id"] = con.inserted_id
+        self.connections.append(connection)
+        
         # Sending a information for created lobby
         topics = ""
         for data in  self.data["topics"]:
