@@ -27,56 +27,82 @@ class Chat(commands.Cog):
         
         for id in self.init.lobby_data:
             if guild_id == id["guild_id"]:
+                log.info(id)
                 canCreate = True
                 break
             
-        if canCreate:               
-            modal = CreateLobbyModal(self.init.lobby_data)
+        if not canCreate:               
+            modal = CreateLobbyModal(self.init.lobby_data,self.init.connection,self.init.lobby_config)
             response = await ctx.interaction.response.send_modal(modal) 
         else:
             await ctx.send(embed=discord.Embed( description= ":no_entry: You have reached the limit of 1 lobby per server",  color=0xFFC0CB))
 
-    # Making this dynamic and able to edit the website
+
     @commands.hybrid_command(name='lobby_show', description="Shows more information of the lobby using the code")
     async def showlobbyData(self, ctx: commands.Context, lobby_id: str):
 
         guild = ctx.guild
         channel = ctx.channel
 
+        # Validation for connection
         connection = None
         for con in self.init.connection:
             if(con['channel_id'] == channel.id and con['guild_id'] == guild.id):
                 connection = con
                 break
-
+        
+        if not connection:
+            await ctx.send(embed=Embed(description="You are not connected",  color=0xFFC0CB))
+        
+        # Create data
         found = None
         for id in self.init.lobby_data:
             if lobby_id == id['lobby_id']:
                 found = id
                 break
-        
         if not found:
             await ctx.send(embed=Embed(description="Lobby not found",  color=0xFFC0CB))
         
-        guild_data  = await self.bot.fetch_guild(found['guild_id'])
+        lobby_config= None
+        for conf in self.init.lobby_config:
+            if lobby_id == conf['lobby_id']:
+                lobby_config = conf['lobby_config']
+                break
+        if not lobby_config:
+            await ctx.send(embed=Embed(description="Something went wrong on finding the lobby details",  color=0xFFC0CB))
+        
+        # Prepare the lobby_data that will be use
+        lobby_data = {
+            "title": lobby_config['title'],
+            "description": lobby_config['description'],
+            "topics": lobby_config['topics'],
+            "lobby_id": found['lobby_id'],
+            "guild_id": found['guild_id'],
+            "limit": lobby_config['limit'],
+            "footer_message": lobby_config['footer']
+        }
 
+        # Fetch guild information
+        guild_data  = await self.bot.fetch_guild(lobby_data["guild_id"])
+
+        # Preparing embed for view
         topics = ""
-        for data in  found["topics"]:
+        for data in  lobby_data["topics"]:
             topics += f"`{data}` "
 
         embed = discord.Embed(
-            title= found['title'], 
+            title= lobby_data['title'], 
             color=0xFFC0CB
         )
         embed.set_thumbnail(url=str(guild_data.icon.url))
         embed.add_field(name="Host", value=f"**Name:** {guild_data.name} \n**Members:** {guild_data.approximate_member_count}", inline=True)
         embed.add_field(
             name="Info", 
-            value= f"Connections: `{self.init.get_lobby_length(found['lobby_id'])}/{found['limit']}` \n"
-                    f" Lobby code: {found['lobby_id']}",
+            value= f"Connections: `{self.init.get_lobby_length(lobby_data['lobby_id'])}/{lobby_data['limit']}` \n"
+                    f" Lobby code: {lobby_data['lobby_id']}",
             inline=True)
         
-        embed.add_field(name="Description", value=found['description'], inline=False)
+        embed.add_field(name="Description", value=lobby_data['description'], inline=False)
 
         embed.add_field(name="Topics", value=topics, inline=False)
         
@@ -86,14 +112,17 @@ class Chat(commands.Cog):
             if conn['lobby_id'] == found['lobby_id']:
                 format += f"{conn["guild_name"]}\n"
         embed.add_field(name="Connections", value=format, inline=False)
-
-
-
         embed.set_footer(text=f"Custom Message here")
         
         await ctx.send(embed=embed)
     
-    
+    @commands.hybrid_command(name='lobbies', description='Current Lobby description')
+    async def show_lobbies(self, ctx: commands.Context):
+
+        view = LobbyPagination(self.init)
+        view.load_data()
+        await view.send(ctx)
+
     @commands.hybrid_command(name='connect', description='Link to Open World')
     @commands.has_permissions(kick_members=True)
     async def openworldlink(self, ctx : commands.Context, lobby_id: str = None):
@@ -312,12 +341,6 @@ class Chat(commands.Cog):
             )
             
             await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name='lobbies', description='Current Lobby description')
-    async def show_lobbies(self, ctx: commands.Context):
-
-        view = LobbyPagination(self.init.lobby_data, current_page=1, sep=5, timeout=None)
-        await view.send(ctx)
 
     @commands.hybrid_command(name='switch', description='Switch to a different server lobby')
     @commands.has_permissions(kick_members=True)

@@ -25,8 +25,9 @@ def load_basic_configuration():
     discord_api_token = os.getenv('DISCORD_API_TOKEN')
     discord_command_prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
     mongo_db_url = os.getenv('MONGO_DB_URL')
-    open_world_thanks_message = os.getenv('OPEN_WORLD_THANKS_MSG')
     
+    mongo_db_cluster = os.getenv('MONGO_DB_CLUSTER')
+
     log_guild_id = os.getenv('LOG_GUILD_ID')
     log_general_id = os.getenv('LOG_GENENRAL_ID')
     log_chat_id = os.getenv('LOG_CHAT_ID')
@@ -44,16 +45,20 @@ def load_basic_configuration():
     basic_config = {
         'DISCORD_API_TOKEN': discord_api_token,
         'DISCORD_COMMAND_PREFIX': discord_command_prefix,
+
         'MONGO_DB_URL': mongo_db_url,
-        'OPEN_WORLD_THANKS_MSG':open_world_thanks_message,
+        'MONGO_DB_CLUSTER' : mongo_db_cluster,
+        
         'LOG_GUILD_ID' : log_guild_id,
         'LOG_GENENRAL_ID' : log_general_id,
         'LOG_CHAT_ID'  : log_chat_id,
         'LOG_SYSTEM_ID' : log_system_id,
         'LOG_MOD_ID' : log_mod_id,
         'LOG_PLAYER_REPORT_ID' : log_player_report_id,
+        
         'CACHE_THRESHOLD': caching_threshold,
-        'GENERAL_LOBBY_NAME' : general_lobby_name
+        
+        'GENERAL_LOBBY_NAME' : general_lobby_name,
     }
 
     log.info(basic_config)
@@ -94,6 +99,19 @@ def getDBUrl():
     """
     try:
         return basic_config['MONGO_DB_URL']
+    except KeyError as e:
+        raise RuntimeError("Bot basic config has not been loaded yet") from e
+
+def getDBCluster():
+    """ Gets the Database url
+    
+    Returns
+    -------
+    str
+        cluster / collection
+    """
+    try:
+        return basic_config['MONGO_DB_CLUSTER']
     except KeyError as e:
         raise RuntimeError("Bot basic config has not been loaded yet") from e
     

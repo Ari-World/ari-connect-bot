@@ -52,9 +52,6 @@ class Intialization:
         self.lobby_config = await lobby_config_repository.findAll()
 
     # Cache Repository Getter functions
-    # 
-    
-    
 
     # More Generalize functions that speicifcs such as validating users if its a mode
     def get_lobby_length(self, lobby_id):

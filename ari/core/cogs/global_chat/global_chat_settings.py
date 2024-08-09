@@ -6,7 +6,7 @@ from typing import List
 from discord import app_commands
 from discord.ext import commands
 
-from .global_chat_ui_views import DynamicChoice, DynamicDropDown, DynamicSubmit
+from .global_chat_ui_views import DynamicChoice, DynamicDropDown
 from .global_chat_initialization import Intialization
 from ...utils.utility import Color
 
@@ -63,50 +63,80 @@ class Config(commands.Cog):
     async def settings(
         self, 
         ctx:commands.Context, 
-        lobby_id: str = None,
+        settings = None,
+        lobby_id = None
         ):
         owner = ctx.message.author.id
         lobby_config = None
         isOwner = False
 
         # Validation
-        if lobby_id is None:
-            pass
-        
-        # Validate if he's the owner
-        for lobby_data in self.init.lobby_data:
-            if lobby_data['owner_id'] == owner:
-                isOwner = True
+        if not lobby_id:
+            lobbies_owned = []
+            # Look for the owned lobbies and list them all
+            for lobby_data in self.init.lobby_data:
+                if lobby_data["owner_id"] == owner:
+                    lobbies_owned.append(lobby_data)
 
-        for config in self.init.lobby_config:
-            if config['lobby_id'] == lobby_id:
-                lobby_config = config
-                break        
+            if len(lobbies_owned) > 0:
+                # List lobbbies, with a dropdown
+                dropdown_data = []
+                list_embed_data = ""
+                embed = discord.Embed(title="Available lobbies")
+                # TODO: This could be improve by using inheritance lobby_config inherits lobby
+                for data in lobbies_owned:
+                    for lobby_config in self.init.lobby_config:
+                        if lobby_config['lobby_id'] == data['lobby_id']:
+                            dropdown_data.append({
+                                'title' :  lobby_config['lobby_config']['title'],
+                                'value' : data['lobby_id']
+                            })
+                            list_embed_data += f"**{lobby_config['lobby_config']['title']}**\n lobby_id: {lobby_config['lobby_id']}\n\n"
+                            break
+                await ctx.send()
+                # then from there thats the config that we gonna use 
+                pass
+            else:
+                await ctx.send(embed=discord.Embed(description="You dont owned any lobbies"))
+        else:
+            # Validate if he's the owner
+            for lobby_data in self.init.lobby_data:
+                if lobby_data['owner_id'] == owner:
+                    isOwner = True
+
+            if not isOwner:
+                await ctx.send(embed=discord.Embed("You don't owned this lobby"))
+            
+            # look for lobby config that the owner owned
+            for config in self.init.lobby_config:
+                if config['lobby_id'] == lobby_id:
+                    lobby_config = config
+                    break        
 
 
-        # Need validation if he's an owner and will pick a which lobby is this
         if self.sent_message is not None:
             await self.settings_menu(ctx, True)
             
         if not settings:
             settings = await self.settings_menu(ctx)
             
-        await self.setting_manager(settings, ctx)
+        await self.setting_manager(settings, ctx, lobby_config)
 
     async def setting_manager(
             self, 
             choice, 
-            ctx : commands.Context, 
+            ctx : commands.Context,
+            lobby_config 
         ):
         flag = choice
 
         while True:
             if str(flag) == "lobbydetails":
-                flag = await self.lobby_details(ctx)
+                flag = await self.lobby_details(ctx, lobby_config['lobby_config'])
             elif str(flag) == "moderation":
-                flag = await self.moderation(ctx)
+                flag = await self.moderation(ctx, lobby_config['moderation_config'])
             elif str(flag) == "logging":
-                flag = await self.lobby_logging(ctx)
+                flag = await self.lobby_logging(ctx, lobby_config['log_config'])
             else:
                 embed = self.create_embed(
                     "Not Found", 
@@ -123,7 +153,7 @@ class Config(commands.Cog):
             if str(flag) == "Back" or flag:
                 flag = await self.settings_menu(ctx)
           
-    async def settings_menu(self, ctx:commands.Context, delete: bool = False) -> (str | None):
+    async def settings_menu(self, ctx:commands.Context ,delete: bool = False) -> (str | None):
         embed = self.create_embed(
             "Settings", 
             "Shows and configure lobby settings",
@@ -150,7 +180,7 @@ class Config(commands.Cog):
             return views.value  
 
         else:
-            await self.sent_message.edit(embed=embed, view=None)
+            await self.sent_message.edit(embed=self.sent_message.embeds[0], view=None)
             self.sent_message = None
             return None
     
@@ -164,25 +194,25 @@ class Config(commands.Cog):
 
         return embed        
     
-    async def lobby_details(self, ctx:commands.Context) -> (str | None):
+    async def lobby_details(self, ctx:commands.Context, lobby_details) -> (str | None):
         fields = [
             {
             "title": "Title",
-            "description": "<:_blank:1266299283737677844> placeholder actual value",
+            "description": f"<:_blank:1266299283737677844>{lobby_details['title']}",
             "value": "title",
             "emoji": "💬",
             "inline": False
             },
             {
             "title": "Description",
-            "description": "<:_blank:1266299283737677844> placeholder actual value",
+            "description": f"<:_blank:1266299283737677844> {lobby_details['description']}",
             "value": "description",
             "emoji": "📝",
             "inline": False
             },
             {
             "title": "Topics",
-            "description": "<:_blank:1266299283737677844> placeholder actual value",
+            "description": f"<:_blank:1266299283737677844> {lobby_details['topics']}",
             "value": "topics",
             "emoji": "🔎",
             "inline": False
@@ -250,10 +280,8 @@ class Config(commands.Cog):
                             # ==============================================================================================
                             # Some setting logic will happen here before sending
                             # Maybe the embed or something
-                            submit = DynamicSubmit( ctx.message.author)
-
+                            
                             # ==============================================================================================
-                            button_interaction_data[1]['sent_message'] = await ctx.send('Submit button here', view=submit)
                         # Then if handles if message was sent so we delete it and change the color to gray
                         else:
                             button_interaction_data[1]['color'] = discord.ButtonStyle.grey
@@ -300,13 +328,41 @@ class Config(commands.Cog):
             except asyncio.TimeoutError:
                 return None
 
-    async def moderation(self, ctx:commands.Context, msg:discord.Message = None):
+    async def moderation(self, ctx:commands.Context, moderation_config, msg:discord.Message = None):
         fields = [
             {
             "title": "Moderators",
-            "description": "<:_blank:1266299283737677844> placeholder actual value : number",
+            "description": f"<:_blank:1266299283737677844> {len(moderation_config['moderators'])}",
             "value": "moderators",
             "emoji": "🛡️",
+            "inline": False
+            },
+            {
+            "title": "Banned Words",
+            "description": f"<:_blank:1266299283737677844> {len(moderation_config['banned_words'])}",
+            "value": "bannedwords",
+            "emoji": "💬",
+            "inline": False
+            },
+            {
+            "title": "Banned Links",
+            "description": f"<:_blank:1266299283737677844> {len(moderation_config['banned_links'])}",
+            "value": "bannedlinks",
+            "emoji": "🔗",
+            "inline": False
+            },
+            {
+            "title": "Banned users",
+            "description": f"<:_blank:1266299283737677844> {len(moderation_config['banned_users'])}",
+            "value": "bannedusers",
+            "emoji": "👤",
+            "inline": False
+            },
+            {
+            "title": "Banned servers",
+            "description": f"<:_blank:1266299283737677844> {len(moderation_config['banned_servers'])}",
+            "value": "bannedservers",
+            "emoji": "🌐",
             "inline": False
             }
         ]
@@ -314,6 +370,7 @@ class Config(commands.Cog):
             title = "Moderation",
             fields = fields
             )       
+        
         button_interaction_data = [
             {
             'title':'Back',
@@ -371,6 +428,79 @@ class Config(commands.Cog):
                             button_interaction_data[1]['sent_message'] = None
 
                         button_interaction_data[1]['status'] = not button_interaction_data[1]['status']
+                    case 'Banned Words':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[2]['status'] is not True:
+                            button_interaction_data[2]['color'] = discord.ButtonStyle.primary
+                            # ==============================================================================================
+                            # Some setting logic will happen here before sending
+
+
+                            # ==============================================================================================
+                            button_interaction_data[2]['sent_message'] = await ctx.send('Rendering Input button for Banned Words')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[2]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[2]['sent_message'].delete()
+                            
+                            button_interaction_data[2]['sent_message'] = None
+
+                        button_interaction_data[2]['status'] = not button_interaction_data[2]['status']
+                    case 'Banned Links':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[3]['status'] is not True:
+                            button_interaction_data[3]['color'] = discord.ButtonStyle.primary
+                            # ==============================================================================================
+                            # Some setting logic will happen here before sending
+
+
+                            # ==============================================================================================
+                            button_interaction_data[3]['sent_message'] = await ctx.send('Rendering Input button for Banned Links')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[3]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[3]['sent_message'].delete()
+                            
+                            button_interaction_data[3]['sent_message'] = None
+
+                        button_interaction_data[3]['status'] = not button_interaction_data[3]['status']
+                    case 'Banned users':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[4]['status'] is not True:
+                            button_interaction_data[4]['color'] = discord.ButtonStyle.primary
+                            # ==============================================================================================
+                            # Some setting logic will happen here before sending
+
+
+                            # ==============================================================================================
+                            button_interaction_data[4]['sent_message'] = await ctx.send('Rendering Input button for Banned users')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[4]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[4]['sent_message'].delete()
+                            
+                            button_interaction_data[4]['sent_message'] = None
+
+                        button_interaction_data[4]['status'] = not button_interaction_data[4]['status']
+                    case 'Banned servers':
+                        # This handles if its clicked, so it change the color and the send the message
+                        if button_interaction_data[5]['status'] is not True:
+                            button_interaction_data[5]['color'] = discord.ButtonStyle.primary
+                            # ==============================================================================================
+                            # Some setting logic will happen here before sending
+
+
+                            # ==============================================================================================
+                            button_interaction_data[5]['sent_message'] = await ctx.send('Rendering Input button for Banned servers')
+                        # Then if handles if message was sent so we delete it and change the color to gray
+                        else:
+                            button_interaction_data[5]['color'] = discord.ButtonStyle.grey
+                            await button_interaction_data[5]['sent_message'].delete()
+                            
+                            button_interaction_data[5]['sent_message'] = None
+
+                        button_interaction_data[5]['status'] = not button_interaction_data[5]['status']
+
                     case _:
                         return None
 
@@ -382,25 +512,25 @@ class Config(commands.Cog):
             except asyncio.TimeoutError:
                 return None
 
-    async def lobby_logging(self, ctx:commands.Context, msg:discord.Message = None):
+    async def lobby_logging(self, ctx:commands.Context, logging_config,msg:discord.Message = None):
         fields = [
             {
             "title": "Chat Logs",
-            "description": "<:_blank:1266299283737677844> placeholder actual value",
+            "description": f"<:_blank:1266299283737677844> {logging_config['chat_log']['channel_id']}", # This is a conditional like if the channel_id has value then set it to true else false
             "value": "chatlogs",
             "emoji": "💬",
             "inline": True
             },
             {
             "title": "Moderation Logs",
-            "description": "<:_blank:1266299283737677844> placeholder actual value",
+            "description": f"<:_blank:1266299283737677844> {logging_config['moderation_logs']['channel_id']}",
             "value": "moderationlogs",
             "emoji": "📝",
             "inline": True
             },
             {
             "title": "Report Logs",
-            "description": "<:_blank:1266299283737677844> placeholder actual value",
+            "description": f"<:_blank:1266299283737677844> {logging_config['report_logs']['channel_id']}",
             "value": "reportlogs",
             "emoji": "🔎",
             "inline": True

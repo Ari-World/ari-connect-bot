@@ -8,9 +8,8 @@ from discord import ui
 from discord.ext import commands
 from .global_chat_repository import Repository 
 from ...utils.utility import generate_uuid
+from .global_chat_initialization import Intialization
 log = logging.getLogger("globalchat.view")
-
-
 # This is currently worked only only for creating lobby
 class CreateLobbyModal(discord.ui.Modal):
     def __init__(self, lobby_data : List, connections: List, configs: List):
@@ -18,9 +17,12 @@ class CreateLobbyModal(discord.ui.Modal):
         self.lobby_data  = lobby_data
         self.connections = connections
         self.config = configs
+
         self.data = {
-            "title": "",
-            "description": "",
+            "guild_id": None,
+            "guild_name": None,
+            "lobby_id": None,
+            "owner_id": None
         }
         
         self.name = discord.ui.TextInput(
@@ -51,7 +53,6 @@ class CreateLobbyModal(discord.ui.Modal):
         channel = interaction.channel
 
         # Generate lobby data
-        self.data["limit"] = 20
         self.data["guild_id"] = interaction.guild.id
         self.data["guild_name"] = interaction.guild.name
         self.data['lobby_id'] = lobby_code
@@ -60,16 +61,20 @@ class CreateLobbyModal(discord.ui.Modal):
         db = Repository()
         res = await db.lobby_repository.create(self.data)
         self.data['_id'] = res.inserted_id
-        # Add the id
+        # Save lobby_data to the cache
         self.lobby_data.append(self.data)
 
         # Create configuration
+        topics = self.topics.value.split(" ")
+        
         config = {
             "lobby_id" : lobby_code,
             "lobby_config": {
                 "title": self.name.value,
                 "description": self.description.value,
-                "topics": self.topics.value.split(" ")
+                "topics": topics,
+                "footer": "",
+                "limit": 20
             },
             "moderation_config": {
                 "moderators": [],
@@ -95,6 +100,7 @@ class CreateLobbyModal(discord.ui.Modal):
         }
         conf = await db.lobby_config_repository.create(config)
         config["_id"] = conf.inserted_id
+        #save config to the cache
         self.config.append(config)
 
         # Creating connection data
@@ -109,12 +115,14 @@ class CreateLobbyModal(discord.ui.Modal):
         
         con = await db.guild_repository.create(connection)
         connection["_id"] = con.inserted_id
+
+        # save connection to the cache
         self.connections.append(connection)
         
         # Sending a information for created lobby
-        topics = ""
-        for data in  self.data["topics"]:
-            topics += f"`{data}` "
+        topics_text = ""
+        for data in  topics:
+            topics_text += f"`{data}` "
 
         embed = discord.Embed(
             title= self.name.value, 
@@ -130,23 +138,44 @@ class CreateLobbyModal(discord.ui.Modal):
         await interaction.response.send_message(embed=embed)
 
 class LobbyPagination(discord.ui.View):
-    def __init__(self, data, current_page: int = 1, sep: int = 5, timeout=None):
+    def __init__(self,  init, current_page: int = 1, sep: int = 5, timeout=None):
         super().__init__()
-        self.data = data
+        self.init = init
+        self.lobby_data = self.init.lobby_data
+        self.config_data = self.init.lobby_config
+
+        self.data : List = [] 
+
         self.current_page = current_page
         self.sep = sep
         self.timeout = timeout
+        # Create the data
+    
+    def load_data(self):
+        for lobby in self.lobby_data:
+            for config in self.config_data:
+                if lobby['lobby_id'] == config['lobby_id']:
+
+                    self.data.append({
+                        "title": config['lobby_config']['title'],
+                        "description": config['lobby_config']['description'],
+                        "topics": config['lobby_config']['topics'],
+                        "lobby_id": config['lobby_id'],
+                        "limit": config['lobby_config']['limit'],
+                        "connection": self.init.get_lobby_length(config['lobby_id'])
+                    })
 
     async def send(self, ctx: commands.Context):
         self.message = await ctx.send(view=self)
+        log.info(self.data)
         await self.update_message(self.data[:self.sep])
 
     
     def create_embed(self, data):
-        log.info(data)
+        # get the all data necessary
         embed = discord.Embed(title=f"Open Lobbies", color=0xFFC0CB)
 
-        embed.set_footer(text=f"page {self.current_page} / {int(len(self.data) / self.sep) + 1}", icon_url=self.message.author.avatar.url)
+        embed.set_footer(text=f"page {self.current_page} / {int(len(data) / self.sep) + 1}", icon_url=self.message.author.avatar.url)
         embed.add_field(
             name="Checkout the following commands!", 
             inline=False,
@@ -167,7 +196,7 @@ class LobbyPagination(discord.ui.View):
                     limit = limit + 1
 
             embed.add_field(
-                name=item['title'], 
+                name=f"{item['title']} {item['connection']}/{item['limit']}", 
                 inline=False, 
                 value=
                 f"{topics}\n"
@@ -175,7 +204,7 @@ class LobbyPagination(discord.ui.View):
                 )
         return embed
 
-    async def update_message(self,data):
+    async def update_message(self, data):
         self.update_buttons()
         await self.message.edit(embed=self.create_embed(data),view=self)
 
@@ -257,6 +286,7 @@ class DropDown(discord.ui.Select):
         self.on_item_added = on_item_added
         
         options = [discord.SelectOption(label=item["title"], value=item["value"], emoji=item['emoji']) for item in self.items]
+        
         super().__init__(
             placeholder=placeholder,
             options=options,
