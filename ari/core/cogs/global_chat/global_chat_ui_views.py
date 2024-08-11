@@ -7,7 +7,7 @@ import discord
 from discord import ui
 from discord.ext import commands
 from .global_chat_repository import Repository 
-from ...utils.utility import generate_uuid
+from ...utils.utility import generate_uuid, Color
 from .global_chat_initialization import Intialization
 log = logging.getLogger("globalchat.view")
 # This is currently worked only only for creating lobby
@@ -74,7 +74,8 @@ class CreateLobbyModal(discord.ui.Modal):
                 "description": self.description.value,
                 "topics": topics,
                 "footer": "",
-                "limit": 20
+                "limit": 20,
+                "visibility": True,
             },
             "moderation_config": {
                 "moderators": [],
@@ -138,74 +139,104 @@ class CreateLobbyModal(discord.ui.Modal):
         await interaction.response.send_message(embed=embed)
 
 class LobbyPagination(discord.ui.View):
-    def __init__(self,  init, current_page: int = 1, sep: int = 5, timeout=None):
+    def __init__(
+            self, 
+            data, 
+            title, 
+            author, 
+            addional_info_field = False, 
+            add_dropdown=False, 
+            drop_placeholder = None, 
+            current_page: int = 1, 
+            sep: int = 5, 
+            timeout=None
+        ):
+
         super().__init__()
-        self.init = init
-        self.lobby_data = self.init.lobby_data
-        self.config_data = self.init.lobby_config
+        self.data : List = data
 
-        self.data : List = [] 
+        self.title = title
+        self.additional_info_field = addional_info_field
 
+        # Dropdown
+        self.add_dropdown = add_dropdown
+        self.drop_placeholder = drop_placeholder
+        self.value = None
+
+        self.author = author
         self.current_page = current_page
         self.sep = sep
         self.timeout = timeout
-        # Create the data
-    
-    def load_data(self):
-        for lobby in self.lobby_data:
-            for config in self.config_data:
-                if lobby['lobby_id'] == config['lobby_id']:
 
-                    self.data.append({
-                        "title": config['lobby_config']['title'],
-                        "description": config['lobby_config']['description'],
-                        "topics": config['lobby_config']['topics'],
-                        "lobby_id": config['lobby_id'],
-                        "limit": config['lobby_config']['limit'],
-                        "connection": self.init.get_lobby_length(config['lobby_id'])
-                    })
+        if self.add_dropdown:
+            self.add_item(CancelButton())
+
+
+    async def add_dropdown_menu(self,data):
+        # Manually remove only the dropdown if it exists
+        for item in self.children:
+            if isinstance(item, DropDown):
+                self.remove_item(item)
+                break
+
+        dropdown = DropDown(
+            items= [{"title": x['title'], 'value': x['value'], 'emoji': None} for x in data],
+            author=self.author,
+            placeholder=self.drop_placeholder,
+            on_item_added=self.on_item_added
+        )
+        self.add_item(dropdown)
 
     async def send(self, ctx: commands.Context):
         self.message = await ctx.send(view=self)
-        log.info(self.data)
         await self.update_message(self.data[:self.sep])
 
     
     def create_embed(self, data):
         # get the all data necessary
-        embed = discord.Embed(title=f"Open Lobbies", color=0xFFC0CB)
+        embed = discord.Embed(color = Color.PRIMARY.to_discord_color())
 
-        embed.set_footer(text=f"page {self.current_page} / {int(len(data) / self.sep) + 1}", icon_url=self.message.author.avatar.url)
-        embed.add_field(
+        embed.set_author(name=f"Ari connect -{self.title}", icon_url=self.message.author.avatar.url)
+        
+        embed.set_footer(text=f"page {self.current_page} / {int(len(data) / self.sep) + 1}")
+
+        if self.additional_info_field:
+            embed.add_field(
             name="Checkout the following commands!", 
             inline=False,
             value= 
                 "`/global_show <lobbycode>` To view more about the lobby\n"
                 "`/connect <lobbycode>` Join the lobby and have a chat\n\n"
                 "Visit the website search more lobby: [Website](https://ariconnect.vercel.app/)"
-        )
+            )
         
-        for item in data:
-            limit = 1
-            topics = ""
-            for x in item['topics']:
-                if limit > 5:
-                    break
-                else:
-                    topics += f"`{x}` "
-                    limit = limit + 1
+        if len(data) > 0:
+            for item in data:
+                limit = 1
+                topics = ""
+                for x in item['topics']:
+                    if limit > 5:
+                        break
+                    else:
+                        topics += f"`{x}` "
+                        limit = limit + 1
 
-            embed.add_field(
-                name=f"{item['title']} {item['connection']}/{item['limit']}", 
-                inline=False, 
-                value=
-                f"{topics}\n"
-                f"Lobby code: {item['lobby_id']}"
-                )
-        return embed
-
+                embed.add_field(
+                    name=f"{item['title']} {item['connection']}/{item['limit']}", 
+                    inline=False, 
+                    value=
+                    f"{topics}\n"
+                    f"Lobby code: {item['lobby_id']}"
+                    )
+            return embed
+        else:
+            embed.add_field(name="", value="No Available lobbies")
+            return embed
+    
     async def update_message(self, data):
         self.update_buttons()
+        if self.add_dropdown:
+            await self.add_dropdown_menu(data)
         await self.message.edit(embed=self.create_embed(data),view=self)
 
     def update_buttons(self):
@@ -234,16 +265,17 @@ class LobbyPagination(discord.ui.View):
     def get_current_page_data(self):
         until_item = self.current_page * self.sep
         from_item = until_item - self.sep
+
         if not self.current_page == 1:
             from_item = 0
             until_item = self.sep
+        
         if self.current_page == int(len(self.data) / self.sep) + 1:
             from_item = self.current_page * self.sep - self.sep
             until_item = len(self.data)
+        
         return self.data[from_item:until_item]
     
-    # TODO : Add input to put the lobby code
-
     @discord.ui.button(label="|<",
                        style=discord.ButtonStyle.green)
     async def first_page_button(self, interaction:discord.Interaction, button: discord.ui.Button):
@@ -272,6 +304,20 @@ class LobbyPagination(discord.ui.View):
         await interaction.response.defer()
         self.current_page = int(len(self.data) / self.sep) + 1
         await self.update_message(self.get_current_page_data())
+
+    async def on_item_added(self,value):
+        self.value = value
+        self.stop()
+
+
+class CancelButton(discord.ui.Button):
+    def __init__(self, label="Cancel", style=discord.ButtonStyle.grey):
+        super().__init__(label=label, style=style)
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.view.value = "Back"
+        self.view.stop()
         
 class DropDown(discord.ui.Select):
     def __init__(

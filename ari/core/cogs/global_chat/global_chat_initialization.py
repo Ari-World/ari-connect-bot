@@ -50,46 +50,78 @@ class Intialization:
         self.lobby_data: List = await lobby_repository.findAll()
         self.connection: List = await guild_repository.findAll()
         self.lobby_config = await lobby_config_repository.findAll()
+    
+    def get_all_lobby_data(self):
+        data = []
+        for lobby_data in self.lobby_data:
+            for lobby_config in self.lobby_config:
+                if lobby_data['lobby_id'] == lobby_config['lobby_id'] and lobby_config['lobby_config']['visibility'] == True:
+                    data.append({
+                        "title": lobby_config['lobby_config']['title'],
+                        "description": lobby_config['lobby_config']['description'],
+                        "topics": lobby_config['lobby_config']['topics'],
+                        "lobby_id": lobby_data['lobby_id'],
+                        "guild_id": lobby_data['guild_id'],
+                        "limit": lobby_config['lobby_config']['limit'],
+                        "connection": self.get_lobby_length(lobby_config['lobby_id']),
+                        "footer_message": lobby_config['lobby_config']['footer'],
+                        "value": lobby_data['lobby_id'],
+                    })
+        return data
+    
+    def get_lobby_basic_data(self, lobby_id):
+        lobby_data = self.get_lobby_data(lobby_id)
+        lobby_config= self.get_lobby_config(lobby_id)
+
+        return {
+            "title": lobby_config['lobby_config']['title'],
+            "description": lobby_config['lobby_config']['description'],
+            "topics": lobby_config['lobby_config']['topics'],
+            "lobby_id": lobby_data['lobby_id'],
+            "guild_id": lobby_data['guild_id'],
+            "limit": lobby_config['lobby_config']['limit'],
+            "connection": self.get_lobby_length(lobby_config['lobby_id']),
+            "footer_message": lobby_config['lobby_config']['footer'],
+            "value": lobby_data['lobby_id'],
+        }
 
     # Cache Repository Getter functions
-
-    # More Generalize functions that speicifcs such as validating users if its a mode
     def get_lobby_length(self, lobby_id):
-        count = 0
+        return len(self.get_lobby_connections(lobby_id))
+
+    def get_lobby_connections(self, lobby_id) -> List:
+        data = []
         for lobby in self.connection:
             if lobby['lobby_id'] == lobby_id:
-                count += 1
-        return count
-    
-
-    def find_guild(self, guild_id: int, channel_id: int, tag: str = None):
-        """
-        Find a guild in the cached guild data by guild_id and channel_id.
+                data.append(lobby)
         
-        Args:
-            guild_id (int): The ID of the guild to find.
-            channel_id (int): The ID of the channel to find within the guild.
-        
-        Returns:
-            dict or None: The guild data if found, otherwise None.
-        """
-        for guild in self.guild_data:  
-            if guild["server_id"] == guild_id:  
-                channels = guild.get("channels", [])
-                for channel in channels: 
-                    if channel["channel_id"] == channel_id:
-                        return guild  
-        return None  
-    
-    
-    async def try_fetch_message(self, target_channel_id, data, channel):
-        try:
-            if data["channel"] == target_channel_id:
-                return await channel.fetch_message(data["messageId"])
-        except discord.NotFound:
-            return None
+        return data
 
+    def get_lobby_config(self, lobby_id):
+        for conf in self.lobby_config:
+            if lobby_id == conf['lobby_id']:
+                return conf
+        return None
+
+    def get_connection(self,channel_id, guild_id):
+        for con in self.connection:
+            if(con['channel_id'] == channel_id and con['guild_id'] == guild_id):
+                return con
+        return None
+
+    def get_lobby_data(self, lobby_id):
+        for id in self.lobby_data:
+            if lobby_id == id['lobby_id']:
+                return id
+        return None
     
+    
+    def isLobbyExists(self, lobby_id):
+        for lobby in self.lobby_data:
+            if lobby_id == lobby['lobby_id']:
+                return lobby
+        return None
+
     def get_user_level(self, user_id):
         for modData in self.moderator:
             for mod in modData["mods"]:
