@@ -248,7 +248,7 @@ class EventListeners(commands.Cog):
 
     async def process_reply(self,  webhook : Webhook, message : discord.Message, messagesData, embed, jump_url):
         try:
-            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=False)
+            allowed_mentions = discord.AllowedMentions(everyone=True, users=False, roles=False)
 
             files = [await attachment.to_file() for attachment in message.attachments]
             
