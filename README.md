@@ -10,39 +10,64 @@
 - Anywhere, Anytime Access: Stay connected on-the-go.
 - Private Lobbies: Secure spaces for inter-server conversations
 
-## Installation
-### Prerequisite
-- Python 3.12.*
-- pip 24.0
+## Setup
 
-Before running all make sure that you have installed all modules that we'll be using, to do that run this command.
-``` cmd
+### Prerequisites
+- Python 3.12.x
+- pip
+- A MongoDB instance (local or hosted) and its connection URL
+- A Discord bot application/token ([Discord Developer Portal](https://discord.com/developers/applications))
+
+### Install dependencies
+
+```
 pip install -r requirements.txt
 ```
 
-After that make sure that you have a `.env `file at the same level of the `main.py`.
-How do I know the values for the *.env* file?
-- Checkout `plugins > config.py` and check the returned values, you'll be able to see what are needed.
-- To know the keys, you'll find in the config `os.getenv(<this is the key>)`
-if you have now defined the config, put those keys with corresponding values, e.g.
-```.env
-DISCORD_API_TOKEN = 
-DISCORD_COMMAND_PREFIX = 
-MONGO_DB_URL =
+### Configure
 
-# Logging ID
-# Make sure that all channel ID is under the guild
-LOG_GUILD_ID =
+Copy `.env.sample` to a new file named `.env` **inside the `ari/` folder**
+(next to `__main__.py` — not at the repo root):
 
-# Channel IDS for logging
-LOG_CHAT_ID = 
-LOG_SYSTEM_ID = 
-LOG_MOD_ID = 
-LOG_PLAYER_REPORT_ID =
-
-CACHE_THRESHOLD = 
-
-GENERAL_LOBBY_NAME =
-FENDERBOT_USER_ID = 
 ```
+cp .env.sample ari/.env
+```
+
+Then fill in the values. `DISCORD_API_TOKEN` and `MONGO_DB_URL` are
+required; everything else has a sensible default or is optional (see the
+comments in `.env.sample`, or `ari/core/config.py`'s `AppConfig` for the
+authoritative list of what the bot actually reads).
+
+### Run the bot
+
+```
+cd ari
+python __main__.py
+```
+
+Note: this is **not** `python -m ari` from the repo root — the codebase's
+imports assume `ari/` itself is on `sys.path`, which only happens when you
+run the entry point as a plain script from inside `ari/`. See `CLAUDE.md`
+for why.
+
+## Testing
+
+```
+pytest
+```
+
+Run from the **repo root** (not `ari/`) — `pytest.ini` points pytest at
+the `ari/` package. No `.env`, database, or live Discord connection is
+needed to run the test suite: it covers the business-logic layer
+(`services/`, `state.py`, pure presenters) using hand-written fakes, not
+a live bot. Discord-facing behavior (cogs, event listeners, UI) is
+verified manually against a real bot token instead — there's no
+Discord-mocking test harness in this repo.
+
+## Architecture
+
+See [`CLAUDE.md`](CLAUDE.md) at the repo root for the full architecture
+guide: the `core`/`features`/`integrations` package layout, the internal
+shape of a feature, and how to add a new one.
+
 ### License

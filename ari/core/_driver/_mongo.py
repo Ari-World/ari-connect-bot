@@ -1,15 +1,8 @@
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from ..data_mananger import getDBUrl
+from ..config import get_config
 
-#  All Collections
-#   #globalmarket = db['globalmarket']
-#   guilds_collection = db['open_world']
-#   muted_collection = db['muted_world_users']
-#   lobby_collection = db['lobbies']
-#   malurl_collection = db['malicious_urls']
-#   malword_collection = db['malicious_words']
 log = logging.getLogger("driver.mongo")
 
 
@@ -27,8 +20,9 @@ class StaticDatabase:
     @classmethod
     def _connect(cls):
         log.info("Establishing new database connection.")
-        cls._cluster = AsyncIOMotorClient(getDBUrl())
-        cls._db = cls._cluster['AriConnectDB']
+        config = get_config()
+        cls._cluster = AsyncIOMotorClient(config.mongo_db_url)
+        cls._db = cls._cluster[config.mongo_db_cluster]
 
     @classmethod
     async def close_db_connection(cls):
@@ -40,7 +34,7 @@ class StaticDatabase:
 
     @classmethod
     def guilds_collection(cls):
-        return cls.get_db()['open_world']
+        return cls.get_db()['connections']
 
     @classmethod
     def muted_collection(cls):
@@ -61,3 +55,7 @@ class StaticDatabase:
     @classmethod
     def moderator_collection(cls):
         return cls.get_db()["moderators"]
+    
+    @classmethod
+    def lobby_config_collection(cls):
+        return cls.get_db()["lobby_config"]

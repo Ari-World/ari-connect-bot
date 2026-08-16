@@ -14,12 +14,10 @@ from rich.panel import Panel
 from rich.text import Text
 
 
-from . import i18n
-from .i18n import Translator
+from . import presenters
+from .config import get_config
 
 log = logging.getLogger("ari")
-
-_ = Translator(__name__, __file__)
 
 INTRO = r"""
 
@@ -68,6 +66,7 @@ def init_events(bot):
             activity=activity
         )
         log.info("Ari Toram is Online")
+
     async def _on_ready():
         if bot._uptime is not None:
             return
@@ -116,6 +115,7 @@ def init_events(bot):
         if invite_url:
             rich_console.print(f"\nInvite URL: {Text(invite_url, style=f'link {invite_url}')}")
             # We generally shouldn't care if the client supports it or not as Rich deals with it.
+        bot.inv_url = invite_url
 
     @bot.event
     async def on_command_error(ctx, error):
@@ -131,18 +131,13 @@ def init_events(bot):
     @bot.event
     async def on_guild_join(guild : discord.Guild):
         channel = guild.text_channels[0]
-        embed = discord.Embed(
-            title=guild.name, 
-            description=f"💖 **Thank you for inviting {bot.user.name}!!**\n\n__**A brief intro**__\nHey Everyone! My main purpose is creating an Inter Guild / Server Connectivity to bring the world closer together!\nHope you'll find my application useful! Thankyouuu~\n\nType `a!about` to know more about me and my usage!\n\n**__Servers Connected__**\n{len(bot.guilds)}\n\n")
+        embed = presenters.build_guild_welcome_embed(guild, bot.user.name, len(bot.guilds))
         await channel.send(embed=embed)
         log.info(f'Bot has been added to a new server {guild.name}\n\n Added by {guild.owner.global_name } ({guild.owner.id})')
-        guildx = bot.get_guild(939025934483357766)
-        target_log = guildx.get_channel(1245210888290439300)
-        # target_channel = guild.system_channel  # Use the system channel for the guild
-        # if target_channel is not None:  # Ensure there's a system channel
-        #     await target_channel.send()
-        # else:
-        #     log.warning("System channel not found. Unable to send welcome message.")
-        await target_log.send(embed=discord.Embed(description=f'Bot has been added to a new server {guild.name}\n\n Added by {guild.owner.global_name } ({guild.owner.id})'))
+
+        config = get_config()
+        admin_guild = bot.get_guild(int(config.log_guild_id))
+        admin_channel = admin_guild.get_channel(int(config.log_general_id))
+        await admin_channel.send(embed=presenters.build_guild_join_admin_notice_embed(guild))
         await ariStatus(bot)
 

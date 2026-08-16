@@ -1,88 +1,26 @@
-
-
-
-from contextvars import ContextVar
 import datetime
-import functools
-from typing import Callable, Iterator, List, Optional, Sequence, SupportsInt, Union
-
-import babel
-from babel.lists import format_list as babel_list
-from babel.numbers import format_decimal
-from discord import Locale
-
-from ..i18n import Translator, get_babel_locale
+from typing import Optional, Sequence, SupportsInt
 
 
-
-_current_locale = ContextVar("_current_locale", default="en-US")
-
-_ = Translator("UtilsChatFormatting", __file__)
-
-
-def humanize_list(
-    items: Sequence[str], *, locale: Optional[str] = None, style: str = "standard"
-) -> str:
-    """Get comma-separated list, with the last element joined with *and*.
-
-    Parameters
-    ----------
-    items : Sequence[str]
-        The items of the list to join together.
-    locale : Optional[str]
-        The locale to convert, if not specified it defaults to the bot's locale.
-    style : str
-        The style to format the list with.
-
-        Note: Not all styles are necessarily available in all locales,
-        see documentation of `babel.lists.format_list` for more details.
-
-        standard
-            A typical 'and' list for arbitrary placeholders.
-            eg. "January, February, and March"
-        standard-short
-             A short version of a 'and' list, suitable for use with short or
-             abbreviated placeholder values.
-             eg. "Jan., Feb., and Mar."
-        or
-            A typical 'or' list for arbitrary placeholders.
-            eg. "January, February, or March"
-        or-short
-            A short version of an 'or' list.
-            eg. "Jan., Feb., or Mar."
-        unit
-            A list suitable for wide units.
-            eg. "3 feet, 7 inches"
-        unit-short
-            A list suitable for short units
-            eg. "3 ft, 7 in"
-        unit-narrow
-            A list suitable for narrow units, where space on the screen is very limited.
-            eg. "3′ 7″"
-
-    Raises
-    ------
-    ValueError
-        The locale does not support the specified style.
+def humanize_list(items: Sequence[str]) -> str:
+    """Join items into a comma-separated list, with 'and' before the last one.
 
     Examples
     --------
-    .. testsetup::
-
-        from redbot.core.utils.chat_formatting import humanize_list
-
-    .. doctest::
-
-        >>> humanize_list(['One', 'Two', 'Three'])
-        'One, Two, and Three'
-        >>> humanize_list(['One'])
-        'One'
-        >>> humanize_list(['omena', 'peruna', 'aplari'], style='or', locale='fi')
-        'omena, peruna tai aplari'
-
+    >>> humanize_list(['One', 'Two', 'Three'])
+    'One, Two, and Three'
+    >>> humanize_list(['One'])
+    'One'
     """
+    items = list(items)
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
 
-    return babel_list(items, style=style, locale=get_babel_locale(locale))
 
 def humanize_timedelta(
     *,
@@ -92,14 +30,12 @@ def humanize_timedelta(
     maximum_units: Optional[int] = None,
 ) -> str:
     """
-    Get a locale aware human timedelta representation.
+    Get a human-readable timedelta representation.
 
     This works with either a timedelta object or a number of seconds.
 
-    Fractional values will be omitted.
-
-    Values that are less than 1 second but greater than -1 second
-    will be an empty string.
+    Fractional values will be omitted. Values that are less than 1 second
+    but greater than -1 second will be an empty string.
 
     Parameters
     ----------
@@ -116,7 +52,7 @@ def humanize_timedelta(
     Returns
     -------
     str
-        A locale aware representation of the timedelta or seconds.
+        A human-readable representation of the timedelta or seconds.
 
     Raises
     ------
@@ -126,21 +62,11 @@ def humanize_timedelta(
 
     Examples
     --------
-    .. testsetup::
-
-        from datetime import timedelta
-        from redbot.core.utils.chat_formatting import humanize_timedelta
-
-    .. doctest::
-
-        >>> humanize_timedelta(seconds=314)
-        '5 minutes, 14 seconds'
-        >>> humanize_timedelta(timedelta=timedelta(minutes=3.14), maximum_units=1)
-        '3 minutes'
-        >>> humanize_timedelta(timedelta=timedelta(days=-3.14), negative_format="%s ago", maximum_units=3)
-        '3 days, 3 hours, 21 minutes ago'
+    >>> humanize_timedelta(seconds=314)
+    '5 minutes and 14 seconds'
+    >>> humanize_timedelta(timedelta=datetime.timedelta(minutes=3.14), maximum_units=1)
+    '3 minutes'
     """
-
     try:
         obj = seconds if seconds is not None else timedelta.total_seconds()
     except AttributeError:
@@ -149,12 +75,12 @@ def humanize_timedelta(
         raise ValueError("maximum_units must be >= 1")
 
     periods = [
-        (_("year"), _("years"), 60 * 60 * 24 * 365),
-        (_("month"), _("months"), 60 * 60 * 24 * 30),
-        (_("day"), _("days"), 60 * 60 * 24),
-        (_("hour"), _("hours"), 60 * 60),
-        (_("minute"), _("minutes"), 60),
-        (_("second"), _("seconds"), 1),
+        ("year", "years", 60 * 60 * 24 * 365),
+        ("month", "months", 60 * 60 * 24 * 30),
+        ("day", "days", 60 * 60 * 24),
+        ("hour", "hours", 60 * 60),
+        ("minute", "minutes", 60),
+        ("second", "seconds", 1),
     ]
     seconds = int(obj)
     if seconds < 0:
@@ -162,7 +88,7 @@ def humanize_timedelta(
         if negative_format and "%s" not in negative_format:
             negative_format = negative_format + " %s"
         else:
-            negative_format = negative_format or (_("negative") + " %s")
+            negative_format = negative_format or "negative %s"
     else:
         negative_format = "%s"
     strings = []
@@ -177,4 +103,4 @@ def humanize_timedelta(
             if len(strings) == maximum_units:
                 break
 
-    return negative_format % humanize_list(strings, style="unit")
+    return negative_format % humanize_list(strings)
