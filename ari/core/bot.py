@@ -6,27 +6,40 @@ from discord import Intents
 
 from discord.ext import commands
 
-from .cogs.utils.utils_cog import Utils
-from .cogs.info.info_cogs import Info
+from .commands.utils_cog import Utils
+from .commands.info_cog import Info
 from ._events import init_events
-from .cog_manager import CogManager
-from .cogs.global_chat.global_chat import GlobalChatManager
+from ._driver._mongo import StaticDatabase
+from features.global_chat.global_chat import GlobalChatManager
+from integrations.registry import is_trusted_bot, load_integrations
 
 from core._cli import ExitCodes
 log = logging.getLogger("ari")
 
-class _NoOwnerSet(RuntimeError):
-    """Raised when there is no owner set for the instance that is trying to start."""
+# Explicit feature registry — add a feature here to have it loaded at
+# startup. No filesystem scanning/auto-discovery on purpose: this list is
+# the single place a maintainer looks to see everything the bot loads.
+FEATURES = [GlobalChatManager, Utils, Info]
+
+# Only the privileged intents the bot actually reads from are requested
+# here (not Intents.all()) — Discord's intent-verification review checks
+# usage against what's requested, and Presence isn't used anywhere.
+def _build_intents() -> Intents:
+    intents = Intents.default()
+    intents.message_content = True  # relay engine reads message.content
+    intents.members = True  # member counts (stats, uptime banner)
+    return intents
+
 
 class Ari(commands.Bot):
-    
+
     def __init__(self, *args, **kwargs):
         self._shutdown_mode = ExitCodes.CRITICAL
-        super().__init__(command_prefix= kwargs["prefix"], intents=Intents.all())
+        super().__init__(command_prefix= kwargs["prefix"], intents=_build_intents())
         self.synced = False
         self.token = False
         self._uptime = None
-        self._cog_mngr = CogManager()
+        self.db = StaticDatabase
         self.inv_url = None
         self.remove_command('help')
         
@@ -39,8 +52,24 @@ class Ari(commands.Bot):
     async def _pre_login(self) -> None:
         """
         This should only be run once, prior to logging in to Discord REST API.
-        """ 
+        """
         init_events(self)
+        # Must run after config.load_config() (called in __main__.main()
+        # before Ari is even constructed) — each integration reads its own
+        # env var, which isn't populated until .env has been loaded.
+        load_integrations()
+
+    async def process_commands(self, message) -> None:
+        """Normally Discord ignores every message from another bot account.
+
+        Trusted bot-to-bot integrations (see ari/integrations/) are the
+        deliberate exception — add a new one there, not here.
+        """
+        if message.author.bot and not is_trusted_bot(message.author.id):
+            return
+
+        ctx = await self.get_context(message)
+        await self.invoke(ctx)
 
     async def setup_hook(self) -> None:
             await self._pre_connect()
@@ -49,15 +78,11 @@ class Ari(commands.Bot):
         """
         This should only be run once, prior to connecting to Discord gateway.
         """
-        
-        log.info("Preparing Global chat feature")
-        await self.add_cog(GlobalChatManager(self))
-        log.info("Preparing Utility Commands")
-        await self.add_cog(Utils(self))
-        log.info("Preparing Info Commands")
-        await self.add_cog(Info(self))
+        for feature_cls in FEATURES:
+            log.info("Preparing %s", feature_cls.__name__)
+            await self.add_cog(feature_cls(self))
 
-    
+
     async def close(self):
         await super().close()
         await self.db.close_db_connection()
@@ -94,36 +119,3 @@ class Ari(commands.Bot):
         raise RuntimeError(
             "Hey, we're cool with sharing info about the uptime, but don't try and assign to it please."
         )
-
-  # async def on_ready(self):
-  #     await self.wait_until_ready()
-  #    
-  #     guild_count = len(self.guilds)
-  #     member_count = sum(len(guild.members) for guild in self.guilds)
-
-  #     activity = discord.Activity(
-  #         type=discord.ActivityType.watching,
-  #         name=f"over {guild_count} Guilds with {member_count} Members!"
-  #     )
-  #     await self.change_presence(
-  #         status=discord.Status.online,
-  #         activity=activity
-  #     )
-  #     log.info("Ari Toram is Online")
-    
-      # Add Cogs here
-      
-  # async def setup_hook(self):
-    
-  #   async def load_cogs(directory):
-  #       await self.load_extension("cogs.open_world_server")
-
-  #       for filename in os.listdir(directory):
-  #           if filename.endswith('.py') and not filename.startswith('__') and not filename.startswith('open_world_server'):
-  #               cog_name = f'cogs.{filename[:-3]}'
-  #               print(cog_name)
-  #               await self.load_extension(cog_name)
-            
-   
-  #   await load_cogs("../cogs")
-  

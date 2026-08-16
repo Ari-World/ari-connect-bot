@@ -1,7 +1,7 @@
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from ..data_mananger import getDBUrl,getDBCluster
+from ..config import get_config
 
 log = logging.getLogger("driver.mongo")
 
@@ -20,8 +20,9 @@ class StaticDatabase:
     @classmethod
     def _connect(cls):
         log.info("Establishing new database connection.")
-        cls._cluster = AsyncIOMotorClient(getDBUrl())
-        cls._db = cls._cluster[getDBCluster()]
+        config = get_config()
+        cls._cluster = AsyncIOMotorClient(config.mongo_db_url)
+        cls._db = cls._cluster[config.mongo_db_cluster]
 
     @classmethod
     async def close_db_connection(cls):

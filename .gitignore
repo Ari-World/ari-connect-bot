@@ -1,6 +1,21 @@
+# Secrets — never commit real credentials
 .env
-test
-.vscode
+
+# Python — generated at runtime/test time, safe to regenerate
 __pycache__
+.pytest_cache
 .venv
 venv
+
+# Editor-specific settings
+.vscode
+
+# Local scratch (pre-existing rule, kept as-is)
+test
+
+# Claude Code — local tooling config and internal workflow artifacts
+# (skills' issue-tracking board, project instructions); not meant to
+# ship as part of the bot's codebase
+.claude
+CLAUDE.md
+issues
