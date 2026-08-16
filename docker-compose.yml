@@ -1,0 +1,12 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: ari-connect-mongo-dev
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - ari-connect-mongo-data:/data/db
+
+volumes:
+  ari-connect-mongo-data:
